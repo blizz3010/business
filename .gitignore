@@ -1,0 +1,6 @@
+node_modules/
+.env
+.next/
+frontend/.next/
+coverage/
+npm-debug.log*
