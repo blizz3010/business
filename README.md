@@ -97,6 +97,7 @@ npm run scan --workspace backend
 
 ## Troubleshooting Deployment
 
+- If Vercel shows `/.next/routes-manifest.json` missing, set the Vercel project **Root Directory** to `frontend` and redeploy.
 - If the **Analyze Tile** button hangs, verify `NEXT_PUBLIC_API_BASE_URL` points to your backend base URL **without** appending `:8080` unless your host explicitly requires it.
 - Confirm backend health endpoint returns JSON: `GET /health`.
 - Ensure backend environment variables are set: `DATABASE_URL`, `REDIS_URL`, and `GOOGLE_PLACES_API_KEY`.
