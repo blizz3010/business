@@ -5,7 +5,7 @@ import { AnalyzeResponse } from '@/lib/types';
 
 declare global {
   interface Window {
-    google: typeof google;
+    google: any;
   }
 }
 
@@ -18,7 +18,7 @@ const ORLANDO_CENTER = { lat: 28.5383, lng: -81.3792 };
 
 export function MapPanel({ data, apiKey }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map>();
+  const mapInstanceRef = useRef<any>();
 
   const markers = useMemo(() => {
     if (!data) return [];

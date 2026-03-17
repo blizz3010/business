@@ -92,5 +92,13 @@ npm run scan --workspace backend
 
 - Deploy frontend on Vercel (`frontend` workspace).
 - Deploy backend on a Node host (Render/Fly/Railway).
-- Set `NEXT_PUBLIC_API_BASE_URL` to backend URL in Vercel env.
+- Set `NEXT_PUBLIC_API_BASE_URL` to backend URL in Vercel env (e.g. `https://your-backend.up.railway.app`, usually without `:8080`).
 - Keep Google API keys in environment variables.
+
+## Troubleshooting Deployment
+
+- If you deploy from repo root, use build command `npm run build --workspace frontend`; the frontend `postbuild` also copies artifacts to root `.next` for Vercel compatibility.
+- If Vercel shows `/.next/routes-manifest.json` missing, set the Vercel project **Root Directory** to `frontend` and redeploy.
+- If the **Analyze Tile** button hangs, verify `NEXT_PUBLIC_API_BASE_URL` points to your backend base URL **without** appending `:8080` unless your host explicitly requires it.
+- Confirm backend health endpoint returns JSON: `GET /health`.
+- Ensure backend environment variables are set: `DATABASE_URL`, `REDIS_URL`, and `GOOGLE_PLACES_API_KEY`.
