@@ -97,6 +97,7 @@ npm run scan --workspace backend
 
 ## Troubleshooting Deployment
 
+- If you deploy from repo root, use build command `npm run build --workspace frontend`; the frontend `postbuild` also copies artifacts to root `.next` for Vercel compatibility.
 - If Vercel shows `/.next/routes-manifest.json` missing, set the Vercel project **Root Directory** to `frontend` and redeploy.
 - If the **Analyze Tile** button hangs, verify `NEXT_PUBLIC_API_BASE_URL` points to your backend base URL **without** appending `:8080` unless your host explicitly requires it.
 - Confirm backend health endpoint returns JSON: `GET /health`.
