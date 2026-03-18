@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Business, HeatmapPoint, MapBounds } from '@/lib/types';
+import { Business, HeatmapPoint } from '@/lib/types';
 
 declare global {
   interface Window {
@@ -21,7 +21,6 @@ type Props = {
   businesses: Business[];
   heatmap: HeatmapPoint[];
   selectedBusiness?: Business | null;
-  onBoundsChange?: (bounds: MapBounds) => void;
 };
 
 function loadStyle(href: string) {
@@ -48,6 +47,7 @@ function loadScript(src: string) {
   });
 }
 
+
 function escapeHtml(value: string) {
   return value
     .replaceAll('&', '&amp;')
@@ -63,7 +63,7 @@ function getMarkerColor(score: number) {
   return '#22c55e';
 }
 
-export function MapPanel({ businesses, heatmap, selectedBusiness, onBoundsChange }: Props) {
+export function MapPanel({ businesses, heatmap, selectedBusiness }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const clusterLayerRef = useRef<any>(null);
@@ -88,39 +88,19 @@ export function MapPanel({ businesses, heatmap, selectedBusiness, onBoundsChange
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
-      const emitBounds = () => {
-        if (!onBoundsChange) return;
-        const bounds = map.getBounds();
-        const ne = bounds.getNorthEast();
-        const sw = bounds.getSouthWest();
-        onBoundsChange({
-          minLat: sw.lat,
-          maxLat: ne.lat,
-          minLng: sw.lng,
-          maxLng: ne.lng
-        });
-      };
-
       mapRef.current = map;
       clusterLayerRef.current = window.L.markerClusterGroup();
       heatLayerRef.current = window.L.layerGroup();
       map.addLayer(clusterLayerRef.current);
       map.addLayer(heatLayerRef.current);
-      map.on('moveend', emitBounds);
-      map.on('zoomend', emitBounds);
-      emitBounds();
     };
 
     init();
 
     return () => {
       mounted = false;
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
     };
-  }, [onBoundsChange]);
+  }, []);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !clusterLayerRef.current || !heatLayerRef.current) return;
