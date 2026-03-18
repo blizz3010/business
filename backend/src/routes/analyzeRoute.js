@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { redis } from '../db/index.js';
 import { analyzeTile } from '../services/analysisService.js';
-import { fetchBusinessesByTile } from '../services/googlePlacesService.js';
-import { upsertBusinesses, queryBusinessesInRadius } from '../services/businessService.js';
+import { queryBusinessesInRadius } from '../services/businessService.js';
 
 export const analyzeRouter = Router();
 
@@ -15,9 +14,6 @@ analyzeRouter.post('/analyze-tile', async (req, res) => {
     if (cached) {
       return res.json(JSON.parse(cached));
     }
-
-    const fetched = await fetchBusinessesByTile({ lat, lng, radius });
-    await upsertBusinesses(fetched);
 
     const businesses = await queryBusinessesInRadius(lat, lng, radius);
     const analysis = analyzeTile(businesses);
