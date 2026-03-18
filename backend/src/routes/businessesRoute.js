@@ -4,18 +4,6 @@ import { CATEGORY_SQL_CASE, normalizeCategory } from '../services/categoryServic
 
 export const businessesRouter = Router();
 
-function formatBusinessRow(row) {
-  return {
-    ...row,
-    lat: Number(row.lat),
-    lng: Number(row.lng),
-    rating: row.rating === null ? null : Number(row.rating),
-    review_count: Number(row.review_count || 0),
-    opportunity_score: Number(row.opportunity_score || 0),
-    normalized_category: normalizeCategory(row.category)
-  };
-}
-
 businessesRouter.get('/businesses', async (req, res) => {
   try {
     const { minRating, minReviews, category } = req.query;
@@ -74,10 +62,12 @@ businessesRouter.get('/businesses', async (req, res) => {
       FROM enriched
       ${whereSQL}
       ORDER BY opportunity_score DESC
+      LIMIT 3000
     `;
 
     const result = await pgPool.query(query, params);
-    return res.json(result.rows.map(formatBusinessRow));
+
+    return res.json(result.rows.map((row) => ({ ...row, normalized_category: normalizeCategory(row.category) })));
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch businesses', details: error.message });
   }
@@ -96,7 +86,7 @@ businessesRouter.get('/opportunities', async (_req, res) => {
       ORDER BY review_count DESC
     `);
 
-    return res.json(result.rows.map(formatBusinessRow));
+    return res.json(result.rows.map((row) => ({ ...row, normalized_category: normalizeCategory(row.category) })));
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch opportunities', details: error.message });
   }

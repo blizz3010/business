@@ -10,10 +10,7 @@ const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod
   loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-slate-900" />
 });
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  'https://streetscope-backend-production.up.railway.app';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 
 const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
@@ -57,8 +54,7 @@ export default function Home() {
         setCategories(categoryData);
         setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
       } catch (fetchError) {
-        console.error('Failed to fetch static analytics data', fetchError);
-        setError('Unable to load analytics data. Please verify backend connectivity.');
+        setError(fetchError instanceof Error ? fetchError.message : 'Unable to load analytics data.');
       }
     };
 
@@ -89,9 +85,8 @@ export default function Home() {
 
         setBusinesses(rows);
       } catch (fetchError) {
-        console.error('Failed to fetch business records', fetchError);
         setBusinesses([]);
-        setError('Failed to fetch business records. Please check API URL and CORS settings.');
+        setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
       } finally {
         setLoading(false);
       }
