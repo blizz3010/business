@@ -31,10 +31,3 @@ export type BusinessFilters = {
   category?: string;
   opportunitiesOnly: boolean;
 };
-
-export type MapBounds = {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-};
