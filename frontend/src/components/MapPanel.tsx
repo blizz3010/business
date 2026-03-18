@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Business, MapBounds } from '@/lib/types';
+import { useEffect, useRef } from 'react';
+import { Business, HeatmapPoint } from '@/lib/types';
 
 declare global {
   interface Window {
@@ -17,23 +17,10 @@ const MARKER_CLUSTER_CSS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/M
 const MARKER_CLUSTER_DEFAULT_CSS =
   'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
 
-const GRID_STEP = 0.015;
-const SEARCH_RADIUS_KM = 1.5;
-
-type OpportunityCell = {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-  score: number;
-};
-
 type Props = {
   businesses: Business[];
+  heatmap: HeatmapPoint[];
   selectedBusiness?: Business | null;
-  selectedCategory?: string;
-  showOpportunitiesOnly?: boolean;
-  onBoundsChange?: (bounds: MapBounds) => void;
 };
 
 function loadStyle(href: string) {
@@ -60,6 +47,7 @@ function loadScript(src: string) {
   });
 }
 
+
 function escapeHtml(value: string) {
   return value
     .replaceAll('&', '&amp;')
@@ -75,76 +63,11 @@ function getMarkerColor(score: number) {
   return '#22c55e';
 }
 
-function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const kmPerLat = 111;
-  const kmPerLng = 111 * Math.cos(((lat1 + lat2) / 2) * (Math.PI / 180));
-  const dLat = (lat1 - lat2) * kmPerLat;
-  const dLng = (lng1 - lng2) * kmPerLng;
-  return Math.sqrt(dLat * dLat + dLng * dLng);
-}
-
-function scoreToColor(score: number) {
-  if (score >= 0.66) return '#ef4444';
-  if (score >= 0.4) return '#facc15';
-  return '#3b82f6';
-}
-
-function computeOpportunityGrid(bounds: MapBounds | null, businesses: Business[]) {
-  if (!bounds) return [];
-
-  const cells: OpportunityCell[] = [];
-
-  for (let lat = bounds.minLat; lat < bounds.maxLat; lat += GRID_STEP) {
-    for (let lng = bounds.minLng; lng < bounds.maxLng; lng += GRID_STEP) {
-      const cellCenterLat = lat + GRID_STEP / 2;
-      const cellCenterLng = lng + GRID_STEP / 2;
-
-      const nearby = businesses.filter((biz) => distanceKm(biz.lat, biz.lng, cellCenterLat, cellCenterLng) <= SEARCH_RADIUS_KM);
-
-      const density = nearby.length;
-      const avgRating = density ? nearby.reduce((sum, biz) => sum + (biz.rating ?? 0), 0) / density : 0;
-      const avgReviews = density ? nearby.reduce((sum, biz) => sum + (biz.review_count || 0), 0) / density : 0;
-
-      const score = (1 / (density + 1)) * 0.5 + ((5 - avgRating) / 5) * 0.3 + (1 / (avgReviews + 1)) * 0.2;
-
-      cells.push({
-        minLat: lat,
-        maxLat: Math.min(lat + GRID_STEP, bounds.maxLat),
-        minLng: lng,
-        maxLng: Math.min(lng + GRID_STEP, bounds.maxLng),
-        score
-      });
-    }
-  }
-
-  return cells;
-}
-
-export function MapPanel({
-  businesses,
-  selectedBusiness,
-  selectedCategory,
-  showOpportunitiesOnly = false,
-  onBoundsChange
-}: Props) {
+export function MapPanel({ businesses, heatmap, selectedBusiness }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const clusterLayerRef = useRef<any>(null);
-  const opportunityLayerRef = useRef<any>(null);
-  const [viewBounds, setViewBounds] = useState<MapBounds | null>(null);
-
-  const categoryFilteredBusinesses = useMemo(() => {
-    if (!selectedCategory) return businesses;
-    const selected = selectedCategory.toLowerCase();
-    return businesses.filter(
-      (biz) => biz.category?.toLowerCase() === selected || biz.normalized_category?.toLowerCase() === selected
-    );
-  }, [businesses, selectedCategory]);
-
-  const opportunityCells = useMemo(
-    () => computeOpportunityGrid(viewBounds, categoryFilteredBusinesses),
-    [viewBounds, categoryFilteredBusinesses]
-  );
+  const heatLayerRef = useRef<any>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -165,67 +88,40 @@ export function MapPanel({
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
-      const emitBounds = () => {
-        const bounds = map.getBounds();
-        const ne = bounds.getNorthEast();
-        const sw = bounds.getSouthWest();
-        const mappedBounds = {
-          minLat: sw.lat,
-          maxLat: ne.lat,
-          minLng: sw.lng,
-          maxLng: ne.lng
-        };
-
-        setViewBounds(mappedBounds);
-        onBoundsChange?.(mappedBounds);
-      };
-
       mapRef.current = map;
       clusterLayerRef.current = window.L.markerClusterGroup();
-      opportunityLayerRef.current = window.L.layerGroup();
-      map.addLayer(opportunityLayerRef.current);
+      heatLayerRef.current = window.L.layerGroup();
       map.addLayer(clusterLayerRef.current);
-      map.on('moveend', emitBounds);
-      map.on('zoomend', emitBounds);
-      emitBounds();
+      map.addLayer(heatLayerRef.current);
     };
 
     init();
 
     return () => {
       mounted = false;
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
     };
-  }, [onBoundsChange]);
+  }, []);
 
   useEffect(() => {
-    if (!window.L || !mapRef.current || !clusterLayerRef.current || !opportunityLayerRef.current) return;
+    if (!window.L || !mapRef.current || !clusterLayerRef.current || !heatLayerRef.current) return;
 
     clusterLayerRef.current.clearLayers();
-    opportunityLayerRef.current.clearLayers();
+    heatLayerRef.current.clearLayers();
 
-    for (const cell of opportunityCells) {
-      window.L.rectangle(
-        [
-          [cell.minLat, cell.minLng],
-          [cell.maxLat, cell.maxLng]
-        ],
-        {
-          color: scoreToColor(cell.score),
-          weight: 0,
-          fillOpacity: 0.35
-        }
-      )
-        .bindTooltip(`Opportunity: ${cell.score.toFixed(2)}`)
-        .addTo(opportunityLayerRef.current);
+    for (const point of heatmap) {
+      const totalReviews = Number(point.total_reviews || 0);
+      const businessCount = Number(point.business_count || 0);
+      const intensity = Math.max(totalReviews, businessCount * 25);
+
+      window.L.circleMarker([Number(point.lat_bucket), Number(point.lng_bucket)], {
+        radius: Math.max(8, Math.min(34, intensity / 70)),
+        color: '#38bdf8',
+        fillOpacity: 0.2,
+        weight: 1
+      }).addTo(heatLayerRef.current);
     }
 
-    if (showOpportunitiesOnly) return;
-
-    for (const business of categoryFilteredBusinesses) {
+    for (const business of businesses) {
       const marker = window.L.circleMarker([business.lat, business.lng], {
         radius: 6,
         color: getMarkerColor(business.opportunity_score),
@@ -245,7 +141,7 @@ export function MapPanel({
 
       clusterLayerRef.current.addLayer(marker);
     }
-  }, [categoryFilteredBusinesses, opportunityCells, showOpportunitiesOnly]);
+  }, [businesses, heatmap]);
 
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;

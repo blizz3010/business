@@ -25,10 +25,6 @@ app.get('/health', (_req, res) => {
 app.use('/api', analyzeRouter);
 app.use('/api', businessesRouter);
 
-app.use((_req, res) => {
-  res.status(404).json({ error: 'Not found' });
-});
-
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`StreetScope backend running on ${port}`);

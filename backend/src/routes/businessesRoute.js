@@ -4,62 +4,27 @@ import { CATEGORY_SQL_CASE, normalizeCategory } from '../services/categoryServic
 
 export const businessesRouter = Router();
 
-let indexReadyPromise;
-
-function ensureGeoIndexes() {
-  if (!indexReadyPromise) {
-    indexReadyPromise = Promise.all([
-      pgPool.query('CREATE INDEX IF NOT EXISTS idx_businesses_lat ON businesses (lat)'),
-      pgPool.query('CREATE INDEX IF NOT EXISTS idx_businesses_lng ON businesses (lng)'),
-      pgPool.query('CREATE INDEX IF NOT EXISTS idx_businesses_lat_lng ON businesses (lat, lng)')
-    ]);
-  }
-
-  return indexReadyPromise;
-}
-
-function formatBusinessRow(row) {
-  return {
-    ...row,
-    lat: Number(row.lat),
-    lng: Number(row.lng),
-    rating: row.rating === null ? null : Number(row.rating),
-    review_count: Number(row.review_count || 0),
-    opportunity_score: Number(row.opportunity_score || 0),
-    normalized_category: normalizeCategory(row.category)
-  };
-}
-
-function parseOptionalNumber(value) {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
-}
-
 businessesRouter.get('/businesses', async (req, res) => {
   try {
-    await ensureGeoIndexes();
-
-    const { minRating, minReviews, category, minLat, maxLat, minLng, maxLng } = req.query;
+    const { minRating, minReviews, category } = req.query;
 
     const whereClauses = [];
     const params = [];
 
-    const parsedMinRating = parseOptionalNumber(minRating);
-    const parsedMinReviews = parseOptionalNumber(minReviews);
-    const parsedMinLat = parseOptionalNumber(minLat);
-    const parsedMaxLat = parseOptionalNumber(maxLat);
-    const parsedMinLng = parseOptionalNumber(minLng);
-    const parsedMaxLng = parseOptionalNumber(maxLng);
-
-    if (parsedMinRating !== undefined) {
-      params.push(parsedMinRating);
-      whereClauses.push(`rating >= $${params.length}`);
+    if (minRating !== undefined) {
+      const parsed = Number(minRating);
+      if (!Number.isNaN(parsed)) {
+        params.push(parsed);
+        whereClauses.push(`rating >= $${params.length}`);
+      }
     }
 
-    if (parsedMinReviews !== undefined) {
-      params.push(parsedMinReviews);
-      whereClauses.push(`review_count >= $${params.length}`);
+    if (minReviews !== undefined) {
+      const parsed = Number(minReviews);
+      if (!Number.isNaN(parsed)) {
+        params.push(parsed);
+        whereClauses.push(`review_count >= $${params.length}`);
+      }
     }
 
     if (category) {
@@ -70,22 +35,7 @@ businessesRouter.get('/businesses', async (req, res) => {
       )`);
     }
 
-    const hasBounds =
-      parsedMinLat !== undefined &&
-      parsedMaxLat !== undefined &&
-      parsedMinLng !== undefined &&
-      parsedMaxLng !== undefined;
-
-    if (hasBounds) {
-      params.push(parsedMinLat, parsedMaxLat, parsedMinLng, parsedMaxLng);
-      const firstBoundIndex = params.length - 3;
-      whereClauses.push(`lat BETWEEN $${firstBoundIndex} AND $${firstBoundIndex + 1}`);
-      whereClauses.push(`lng BETWEEN $${firstBoundIndex + 2} AND $${firstBoundIndex + 3}`);
-    }
-
     const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
-
-    params.push(hasBounds ? 1000 : 500);
 
     const query = `
       WITH enriched AS (
@@ -112,11 +62,12 @@ businessesRouter.get('/businesses', async (req, res) => {
       FROM enriched
       ${whereSQL}
       ORDER BY opportunity_score DESC
-      LIMIT $${params.length}
+      LIMIT 3000
     `;
 
     const result = await pgPool.query(query, params);
-    return res.json(result.rows.map(formatBusinessRow));
+
+    return res.json(result.rows.map((row) => ({ ...row, normalized_category: normalizeCategory(row.category) })));
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch businesses', details: error.message });
   }
@@ -135,7 +86,7 @@ businessesRouter.get('/opportunities', async (_req, res) => {
       ORDER BY review_count DESC
     `);
 
-    return res.json(result.rows.map(formatBusinessRow));
+    return res.json(result.rows.map((row) => ({ ...row, normalized_category: normalizeCategory(row.category) })));
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch opportunities', details: error.message });
   }
