@@ -7,7 +7,15 @@ import { businessesRouter } from './routes/businessesRoute.js';
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+const corsMiddleware = cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+});
+
+app.use(corsMiddleware);
+app.options('*', corsMiddleware);
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
