@@ -1,25 +1,33 @@
 export type Business = {
   id?: number;
-  place_id: string;
   name: string;
   category: string;
+  normalized_category: string;
   lat: number;
   lng: number;
   rating: number | null;
   review_count: number;
-  address: string;
+  opportunity_score: number;
 };
 
-export type Opportunity = {
-  type: 'missing-category' | 'weak-competitor' | 'cluster-opportunity';
+export type HeatmapPoint = {
+  lat_bucket: string;
+  lng_bucket: string;
+  business_count: string;
+  avg_rating: string | null;
+  total_reviews: string;
+};
+
+export type CategoryInsight = {
   category: string;
-  score: number;
-  reason: string;
+  total: string;
+  avg_rating: string | null;
+  avg_reviews: string | null;
 };
 
-export type AnalyzeResponse = {
-  businesses: Business[];
-  category_counts: Record<string, number>;
-  opportunities: Opportunity[];
-  weak_competitors: Business[];
+export type BusinessFilters = {
+  minRating?: number;
+  minReviews?: number;
+  category?: string;
+  opportunitiesOnly: boolean;
 };

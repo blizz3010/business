@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { analyzeRouter } from './routes/analyzeRoute.js';
+import { businessesRouter } from './routes/businessesRoute.js';
 
 dotenv.config();
 
@@ -13,7 +14,8 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'StreetScope AI backend' });
 });
 
-app.use('/', analyzeRouter);
+app.use('/api', analyzeRouter);
+app.use('/api', businessesRouter);
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
