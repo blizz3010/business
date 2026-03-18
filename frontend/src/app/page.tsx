@@ -1,102 +1,128 @@
 'use client';
 
-import { useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useEffect, useMemo, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
-import { MapPanel } from '@/components/MapPanel';
-import { AnalyzeResponse } from '@/lib/types';
+import { Business, BusinessFilters, CategoryInsight, HeatmapPoint } from '@/lib/types';
 
-const DEFAULT_TILE = {
-  lat: 28.5383,
-  lng: -81.3792,
-  radius: 500
+const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
+  ssr: false,
+  loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-slate-900" />
+});
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  'https://streetscope-backend-production.up.railway.app';
+
+const DEFAULT_FILTERS: BusinessFilters = {
+  minRating: undefined,
+  minReviews: undefined,
+  category: undefined,
+  opportunitiesOnly: false
 };
 
 export default function Home() {
+  const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [opportunities, setOpportunities] = useState<Business[]>([]);
+  const [heatmap, setHeatmap] = useState<HeatmapPoint[]>([]);
+  const [categories, setCategories] = useState<CategoryInsight[]>([]);
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const analyze = async () => {
-    setLoading(true);
-    setError(null);
+  const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+  useEffect(() => {
+    const fetchStaticData = async () => {
+      try {
+        const [heatmapResponse, categoryResponse, opportunityResponse] = await Promise.all([
+          fetch(`${API_BASE}/api/heatmap`),
+          fetch(`${API_BASE}/api/categories`),
+          fetch(`${API_BASE}/api/opportunities`)
+        ]);
 
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/analyze-tile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(DEFAULT_TILE),
-        signal: controller.signal
-      });
+        if (!heatmapResponse.ok || !categoryResponse.ok || !opportunityResponse.ok) {
+          throw new Error('Failed to load one or more data sources.');
+        }
 
-      const data = await response.json();
+        const [heatmapData, categoryData, opportunityData] = await Promise.all([
+          heatmapResponse.json(),
+          categoryResponse.json(),
+          opportunityResponse.json()
+        ]);
 
-      if (!response.ok) {
-        setResult(null);
-        setError(data?.details || data?.error || 'Analysis failed. Check backend environment variables and URL.');
-        return;
+        setHeatmap(heatmapData);
+        setCategories(categoryData);
+        setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
+      } catch (fetchError) {
+        console.error('Failed to fetch static analytics data', fetchError);
+        setError('Unable to load analytics data. Please verify backend connectivity.');
       }
+    };
 
-      const normalized = normalizeAnalyzeResponse(data);
-      if (!normalized) {
-        setResult(null);
-        setError('Unexpected response shape from API.');
-        return;
-      }
+    fetchStaticData();
+  }, []);
 
-      setResult(normalized);
-    } catch (err) {
-      setResult(null);
-      if (err instanceof Error && err.name === 'AbortError') {
-        setError('Request timed out. Verify NEXT_PUBLIC_API_BASE_URL and backend health.');
-      } else {
-        setError('Network error while analyzing tile. Verify API URL and CORS settings.');
+  useEffect(() => {
+    const fetchBusinesses = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const params = new URLSearchParams();
+        if (filters.minRating !== undefined) params.set('minRating', String(filters.minRating));
+        if (filters.minReviews !== undefined) params.set('minReviews', String(filters.minReviews));
+        if (filters.category) params.set('category', filters.category);
+
+        const response = await fetch(`${API_BASE}/api/businesses?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch business records.');
+        }
+
+        let rows: Business[] = await response.json();
+
+        if (filters.opportunitiesOnly) {
+          rows = rows.filter((biz) => (biz.rating ?? 0) < 3.8 && biz.review_count > 100);
+        }
+
+        setBusinesses(rows);
+      } catch (fetchError) {
+        console.error('Failed to fetch business records', fetchError);
+        setBusinesses([]);
+        setError('Failed to fetch business records. Please check API URL and CORS settings.');
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      clearTimeout(timeout);
-      setLoading(false);
-    }
-  };
+    };
+
+    fetchBusinesses();
+  }, [filters]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3">
-      <section className="lg:col-span-2">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold">StreetScope AI · Orlando Intelligence</h1>
-          <button
-            onClick={analyze}
-            disabled={loading}
-            className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-400 disabled:opacity-60"
-          >
-            {loading ? 'Analyzing...' : 'Analyze Tile'}
-          </button>
+      <section className="space-y-3 lg:col-span-2">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl font-bold">Business Opportunity Intelligence</h1>
+          <span className="rounded bg-slate-800 px-3 py-1 text-sm text-slate-300">
+            {loading ? 'Loading...' : `${businesses.length} businesses`}
+          </span>
         </div>
-        {error ? (
-          <div className="mb-3 rounded-lg border border-rose-700 bg-rose-950/50 px-3 py-2 text-sm text-rose-200">{error}</div>
-        ) : null}
-        <MapPanel data={result} apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY} />
+        {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
+        <MapPanel businesses={businesses} heatmap={heatmap} selectedBusiness={selectedBusiness} />
       </section>
+
       <aside>
-        <Dashboard data={result} />
+        <Dashboard
+          filters={filters}
+          categories={categoryOptions}
+          opportunities={opportunities}
+          categoryInsights={categories}
+          onFilterChange={setFilters}
+          onSelectBusiness={setSelectedBusiness}
+        />
       </aside>
     </main>
   );
-}
-
-function normalizeAnalyzeResponse(payload: unknown): AnalyzeResponse | null {
-  if (!payload || typeof payload !== 'object') return null;
-
-  const maybe = payload as Partial<AnalyzeResponse>;
-  if (!Array.isArray(maybe.businesses) || !Array.isArray(maybe.opportunities) || !Array.isArray(maybe.weak_competitors)) {
-    return null;
-  }
-
-  return {
-    businesses: maybe.businesses,
-    opportunities: maybe.opportunities,
-    weak_competitors: maybe.weak_competitors,
-    category_counts: maybe.category_counts && typeof maybe.category_counts === 'object' ? maybe.category_counts : {}
-  };
 }
