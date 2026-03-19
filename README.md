@@ -4,7 +4,7 @@ StreetScope AI is a location intelligence platform for Orlando, Florida. It scan
 
 ## Architecture
 
-- **Frontend**: Next.js + React + TailwindCSS + Google Maps JavaScript API
+- **Frontend**: Next.js + React + TailwindCSS + Leaflet
 - **Backend**: Node.js + Express
 - **Data**: PostgreSQL businesses table + Redis tile cache
 - **Collection**: Orlando tile scanner using Google Places API
@@ -71,8 +71,12 @@ Opportunity score is normalized to 0–100 from density/reviews/absence factors.
    ```bash
    psql "$DATABASE_URL" -f database/schema.sql
    ```
-4. Ensure Redis is running on `REDIS_URL`.
-5. Start frontend + backend:
+4. If your DB already contains data, run the normalized-category backfill migration:
+   ```bash
+   psql "$DATABASE_URL" -f database/migrations/001_add_normalized_category.sql
+   ```
+5. Ensure Redis is running on `REDIS_URL` (optional but recommended; backend now degrades gracefully if Redis is unavailable).
+6. Start frontend + backend:
    ```bash
    npm run dev
    ```
@@ -93,6 +97,7 @@ npm run scan --workspace backend
 - Deploy frontend on Vercel (`frontend` workspace).
 - Deploy backend on a Node host (Render/Fly/Railway).
 - Set `NEXT_PUBLIC_API_BASE_URL` to backend URL in Vercel env (e.g. `https://your-backend.up.railway.app`, usually without `:8080`).
+- Set `CORS_ALLOWED_ORIGINS` on backend as a comma-separated list of allowed frontend origins.
 - Keep Google API keys in environment variables.
 
 ## Troubleshooting Deployment
@@ -102,3 +107,4 @@ npm run scan --workspace backend
 - If the **Analyze Tile** button hangs, verify `NEXT_PUBLIC_API_BASE_URL` points to your backend base URL **without** appending `:8080` unless your host explicitly requires it.
 - Confirm backend health endpoint returns JSON: `GET /health`.
 - Ensure backend environment variables are set: `DATABASE_URL`, `REDIS_URL`, and `GOOGLE_PLACES_API_KEY`.
+- For production CORS, include your deployed frontend URL in `CORS_ALLOWED_ORIGINS`.

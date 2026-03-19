@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pgPool } from '../db/index.js';
-import { CATEGORY_SQL_CASE, normalizeCategory } from '../services/categoryService.js';
+import { parseNumber, sendServerError, sendValidationError } from '../utils/http.js';
 
 export const businessesRouter = Router();
 
@@ -10,19 +10,21 @@ businessesRouter.get('/businesses', async (req, res) => {
 
     const whereClauses = [];
     const params = [];
-    const parsedSouth = Number(south);
-    const parsedNorth = Number(north);
-    const parsedWest = Number(west);
-    const parsedEast = Number(east);
+    const parsedSouth = parseNumber(south);
+    const parsedNorth = parseNumber(north);
+    const parsedWest = parseNumber(west);
+    const parsedEast = parseNumber(east);
 
     const hasValidBounds =
-      !Number.isNaN(parsedSouth) &&
-      !Number.isNaN(parsedNorth) &&
-      !Number.isNaN(parsedWest) &&
-      !Number.isNaN(parsedEast);
+      parsedSouth !== null &&
+      parsedNorth !== null &&
+      parsedWest !== null &&
+      parsedEast !== null &&
+      parsedSouth < parsedNorth &&
+      parsedWest < parsedEast;
 
     if (!hasValidBounds) {
-      return res.status(400).json({ error: 'south, north, west, and east query params are required numbers.' });
+      return sendValidationError(res, 'south, north, west, and east must be valid bounds values.');
     }
 
     params.push(parsedSouth);
@@ -35,16 +37,16 @@ businessesRouter.get('/businesses', async (req, res) => {
     whereClauses.push(`lng <= $${params.length}`);
 
     if (minRating !== undefined) {
-      const parsed = Number(minRating);
-      if (!Number.isNaN(parsed)) {
+      const parsed = parseNumber(minRating);
+      if (parsed !== null) {
         params.push(parsed);
         whereClauses.push(`rating >= $${params.length}`);
       }
     }
 
     if (minReviews !== undefined) {
-      const parsed = Number(minReviews);
-      if (!Number.isNaN(parsed)) {
+      const parsed = parseNumber(minReviews);
+      if (parsed !== null) {
         params.push(parsed);
         whereClauses.push(`review_count >= $${params.length}`);
       }
@@ -61,18 +63,6 @@ businessesRouter.get('/businesses', async (req, res) => {
     const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const query = `
-      WITH enriched AS (
-        SELECT
-          name,
-          lat,
-          lng,
-          rating,
-          review_count,
-          category,
-          ${CATEGORY_SQL_CASE} AS normalized_category,
-          (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score
-        FROM businesses
-      )
       SELECT
         name,
         lat,
@@ -82,37 +72,51 @@ businessesRouter.get('/businesses', async (req, res) => {
         category,
         normalized_category,
         opportunity_score
-      FROM enriched
+      FROM (
+        SELECT
+          name,
+          lat,
+          lng,
+          rating,
+          review_count,
+          category,
+          normalized_category,
+          (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score
+        FROM businesses
+      ) enriched
       ${whereSQL}
       ORDER BY review_count DESC
     `;
 
     const result = await pgPool.query(query, params);
 
-    return res.json(result.rows.map((row) => ({ ...row, normalized_category: row.normalized_category })));
+    return res.json(result.rows);
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch businesses', details: error.message });
+    return sendServerError(res, 'Failed to fetch businesses', error);
   }
 });
 
-businessesRouter.get('/opportunities', async (_req, res) => {
+async function fetchPriorityTargets(_req, res) {
   try {
     const result = await pgPool.query(`
       SELECT
         *,
         (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score,
-        ${CATEGORY_SQL_CASE} AS normalized_category
+        normalized_category
       FROM businesses
       WHERE rating < 3.8
         AND review_count > 100
       ORDER BY review_count DESC
     `);
 
-    return res.json(result.rows.map((row) => ({ ...row, normalized_category: normalizeCategory(row.category) })));
+    return res.json(result.rows);
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch opportunities', details: error.message });
+    return sendServerError(res, 'Failed to fetch priority targets', error);
   }
-});
+}
+
+businessesRouter.get('/priority-targets', fetchPriorityTargets);
+businessesRouter.get('/opportunities', fetchPriorityTargets);
 
 businessesRouter.get('/heatmap', async (_req, res) => {
   try {
@@ -130,7 +134,7 @@ businessesRouter.get('/heatmap', async (_req, res) => {
 
     return res.json(result.rows);
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch heatmap', details: error.message });
+    return sendServerError(res, 'Failed to fetch heatmap', error);
   }
 });
 
@@ -138,17 +142,17 @@ businessesRouter.get('/categories', async (_req, res) => {
   try {
     const result = await pgPool.query(`
       SELECT
-        ${CATEGORY_SQL_CASE} AS category,
+        normalized_category AS category,
         COUNT(*) as total,
         AVG(rating) as avg_rating,
         AVG(review_count) as avg_reviews
       FROM businesses
-      GROUP BY 1
+      GROUP BY normalized_category
       ORDER BY total DESC
     `);
 
     return res.json(result.rows);
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch categories', details: error.message });
+    return sendServerError(res, 'Failed to fetch categories', error);
   }
 });
