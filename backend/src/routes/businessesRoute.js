@@ -6,10 +6,33 @@ export const businessesRouter = Router();
 
 businessesRouter.get('/businesses', async (req, res) => {
   try {
-    const { minRating, minReviews, category } = req.query;
+    const { minRating, minReviews, category, south, north, west, east } = req.query;
 
     const whereClauses = [];
     const params = [];
+    const parsedSouth = Number(south);
+    const parsedNorth = Number(north);
+    const parsedWest = Number(west);
+    const parsedEast = Number(east);
+
+    const hasValidBounds =
+      !Number.isNaN(parsedSouth) &&
+      !Number.isNaN(parsedNorth) &&
+      !Number.isNaN(parsedWest) &&
+      !Number.isNaN(parsedEast);
+
+    if (!hasValidBounds) {
+      return res.status(400).json({ error: 'south, north, west, and east query params are required numbers.' });
+    }
+
+    params.push(parsedSouth);
+    whereClauses.push(`lat >= $${params.length}`);
+    params.push(parsedNorth);
+    whereClauses.push(`lat <= $${params.length}`);
+    params.push(parsedWest);
+    whereClauses.push(`lng >= $${params.length}`);
+    params.push(parsedEast);
+    whereClauses.push(`lng <= $${params.length}`);
 
     if (minRating !== undefined) {
       const parsed = Number(minRating);
@@ -61,13 +84,12 @@ businessesRouter.get('/businesses', async (req, res) => {
         opportunity_score
       FROM enriched
       ${whereSQL}
-      ORDER BY opportunity_score DESC
-      LIMIT 3000
+      ORDER BY review_count DESC
     `;
 
     const result = await pgPool.query(query, params);
 
-    return res.json(result.rows.map((row) => ({ ...row, normalized_category: normalizeCategory(row.category) })));
+    return res.json(result.rows.map((row) => ({ ...row, normalized_category: row.normalized_category })));
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch businesses', details: error.message });
   }
