@@ -75,6 +75,12 @@ export default function Home() {
     typeof window !== 'undefined' && !isLocalhostHost(window.location.hostname) && API_BASE.includes('localhost');
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const inProdHost = !isLocalhostHost(window.location.hostname);
+    setIsMisconfiguredProdApiBase(inProdHost && API_BASE.includes('localhost'));
+  }, []);
+
+  useEffect(() => {
     const fetchStaticData = async () => {
       if (isMisconfiguredProdApiBase) {
         setError(
@@ -111,7 +117,6 @@ export default function Home() {
 
   useEffect(() => {
     const fetchBusinesses = async () => {
-      if (isMisconfiguredProdApiBase) return;
       if (!hasValidBounds(bounds)) return;
 
       if (businessRequestAbortRef.current) {
@@ -161,7 +166,7 @@ export default function Home() {
         businessRequestAbortRef.current.abort();
       }
     };
-  }, [bounds, filters.category, filters.minRating, filters.minReviews, isMisconfiguredProdApiBase]);
+  }, [bounds, filters.category, filters.minRating, filters.minReviews]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
