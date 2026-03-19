@@ -21,6 +21,6 @@ export type BusinessFilters = {
   minRating?: number;
   minReviews?: number;
   category?: string;
-  hideBusinessMarkers: boolean;
+  showBusinessMarkers: boolean;
   opportunityLayerEnabled: boolean;
 };

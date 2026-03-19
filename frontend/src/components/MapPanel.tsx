@@ -26,7 +26,7 @@ type Props = {
   businesses: Business[];
   allBusinesses: Business[];
   selectedCategory?: string;
-  hideBusinessMarkers: boolean;
+  opportunitiesOnly: boolean;
   opportunityLayerEnabled?: boolean;
   selectedBusiness?: Business | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
@@ -98,7 +98,7 @@ export function MapPanel({
   businesses,
   allBusinesses,
   selectedCategory,
-  hideBusinessMarkers,
+  opportunitiesOnly,
   opportunityLayerEnabled = false,
   selectedBusiness,
   onBoundsChange
@@ -195,16 +195,16 @@ export function MapPanel({
     });
 
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
-    if (businesses.length > 0 && !hideBusinessMarkers) map.addLayer(clusterLayer);
-  }, [businesses, hideBusinessMarkers]);
+    if (businesses.length > 0 && showBusinessMarkers) map.addLayer(clusterLayer);
+  }, [businesses, showBusinessMarkers]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
-    if (!hideBusinessMarkers) map.addLayer(clusterLayer);
-  }, [hideBusinessMarkers]);
+    if (showBusinessMarkers) map.addLayer(clusterLayer);
+  }, [showBusinessMarkers]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;

@@ -16,7 +16,7 @@ const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
   minReviews: undefined,
   category: undefined,
-  hideBusinessMarkers: false,
+  showBusinessMarkers: true,
   opportunityLayerEnabled: true
 };
 
@@ -149,7 +149,7 @@ export default function Home() {
           businesses={selectedBusinesses}
           allBusinesses={allBusinesses}
           selectedCategory={filters.category}
-          hideBusinessMarkers={filters.hideBusinessMarkers}
+          opportunitiesOnly={filters.opportunitiesOnly}
           opportunityLayerEnabled={filters.opportunityLayerEnabled}
           selectedBusiness={selectedBusiness}
           onBoundsChange={setBounds}
