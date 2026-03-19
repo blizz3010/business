@@ -78,6 +78,15 @@ export function Dashboard({
           <label className="flex items-center gap-2 text-slate-200">
             <input
               type="checkbox"
+              checked={filters.opportunityLayerEnabled}
+              onChange={(event) => onFilterChange({ ...filters, opportunityLayerEnabled: event.target.checked })}
+            />
+            Show Opportunity Layer
+          </label>
+
+          <label className="flex items-center gap-2 text-slate-200">
+            <input
+              type="checkbox"
               checked={filters.opportunitiesOnly}
               onChange={(event) => onFilterChange({ ...filters, opportunitiesOnly: event.target.checked })}
             />
