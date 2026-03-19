@@ -26,7 +26,7 @@ type Props = {
   businesses: Business[];
   allBusinesses: Business[];
   selectedCategory?: string;
-  showBusinessMarkers: boolean;
+  opportunitiesOnly: boolean;
   opportunityLayerEnabled?: boolean;
   selectedBusiness?: Business | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
@@ -98,7 +98,7 @@ export function MapPanel({
   businesses,
   allBusinesses,
   selectedCategory,
-  showBusinessMarkers,
+  opportunitiesOnly,
   opportunityLayerEnabled = false,
   selectedBusiness,
   onBoundsChange
