@@ -26,7 +26,7 @@ type Props = {
   businesses: Business[];
   allBusinesses: Business[];
   selectedCategory?: string;
-  opportunitiesOnly: boolean;
+  showBusinessMarkers: boolean;
   opportunityLayerEnabled?: boolean;
   selectedBusiness?: Business | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
@@ -98,7 +98,7 @@ export function MapPanel({
   businesses,
   allBusinesses,
   selectedCategory,
-  opportunitiesOnly,
+  showBusinessMarkers,
   opportunityLayerEnabled = false,
   selectedBusiness,
   onBoundsChange
@@ -411,7 +411,7 @@ export function MapPanel({
   }, [selectedBusiness]);
 
   return (
-    <div className="relative h-full min-h-[520px] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+    <div className="relative h-[420px] overflow-hidden rounded-xl border border-slate-800 bg-slate-900 lg:h-[460px]">
       {OPPORTUNITY_ENABLED ? (
         <div className="pointer-events-none absolute bottom-3 left-3 z-[1200] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
           <p className="mb-2 font-semibold">Opportunity Layer</p>

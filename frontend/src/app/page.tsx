@@ -7,7 +7,7 @@ import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
 const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
   ssr: false,
-  loading: () => <div className="h-[520px] animate-pulse rounded-xl bg-slate-900" />
+  loading: () => <div className="h-[420px] animate-pulse rounded-xl bg-slate-900 lg:h-[460px]" />
 });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
@@ -149,7 +149,7 @@ export default function Home() {
           businesses={selectedBusinesses}
           allBusinesses={allBusinesses}
           selectedCategory={filters.category}
-          opportunitiesOnly={filters.opportunitiesOnly}
+          showBusinessMarkers={filters.showBusinessMarkers}
           opportunityLayerEnabled={filters.opportunityLayerEnabled}
           selectedBusiness={selectedBusiness}
           onBoundsChange={setBounds}
