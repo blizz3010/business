@@ -27,6 +27,31 @@ if (redis) {
   });
 }
 
+export async function connectRedisIfConfigured() {
+  if (!redis) return false;
+
+  if (redis.status === 'ready') return true;
+
+  try {
+    await redis.connect();
+    return true;
+  } catch (error) {
+    console.warn('Failed to establish Redis connection during startup:', error.message);
+    return false;
+  }
+}
+
+export async function isRedisHealthy() {
+  if (!redis) return false;
+
+  try {
+    const pong = await redis.ping();
+    return pong === 'PONG';
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureBusinessSchemaReady() {
   await pgPool.query(`
     ALTER TABLE businesses
