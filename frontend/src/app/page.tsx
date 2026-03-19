@@ -71,6 +71,8 @@ export default function Home() {
   const businessRequestAbortRef = useRef<AbortController | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
+  const isMisconfiguredProdApiBase =
+    typeof window !== 'undefined' && !isLocalhostHost(window.location.hostname) && API_BASE.includes('localhost');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
