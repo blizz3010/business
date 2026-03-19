@@ -17,7 +17,7 @@ export function Dashboard({
   onFilterChange,
   onSelectBusiness
 }: Props) {
-  const top50 = opportunities.slice(0, 50);
+  const top50PriorityTargets = opportunities.slice(0, 50);
 
   return (
     <div className="space-y-4">
@@ -96,9 +96,9 @@ export function Dashboard({
       </section>
 
       <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="text-md font-semibold">Top 50 Opportunities</h3>
+        <h3 className="text-md font-semibold">Top 50 Priority Targets</h3>
         <ul className="mt-2 max-h-[320px] space-y-2 overflow-auto text-sm">
-          {top50.map((business) => (
+          {top50PriorityTargets.map((business) => (
             <li key={`${business.name}-${business.lat}-${business.lng}`}>
               <button
                 type="button"
