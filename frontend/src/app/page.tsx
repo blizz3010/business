@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
-import { Business, BusinessFilters, CategoryInsight, HeatmapPoint } from '@/lib/types';
+import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
 const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
   ssr: false,
@@ -21,36 +21,33 @@ const DEFAULT_FILTERS: BusinessFilters = {
 
 export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
-  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [opportunities, setOpportunities] = useState<Business[]>([]);
-  const [heatmap, setHeatmap] = useState<HeatmapPoint[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
+  const businesses = useMemo(() => {
+    if (!filters.category) return allBusinesses;
+    return allBusinesses.filter((biz) => biz.normalized_category === filters.category || biz.category === filters.category);
+  }, [allBusinesses, filters.category]);
 
   useEffect(() => {
     const fetchStaticData = async () => {
       try {
-        const [heatmapResponse, categoryResponse, opportunityResponse] = await Promise.all([
-          fetch(`${API_BASE}/api/heatmap`),
+        const [categoryResponse, opportunityResponse] = await Promise.all([
           fetch(`${API_BASE}/api/categories`),
           fetch(`${API_BASE}/api/opportunities`)
         ]);
 
-        if (!heatmapResponse.ok || !categoryResponse.ok || !opportunityResponse.ok) {
+        if (!categoryResponse.ok || !opportunityResponse.ok) {
           throw new Error('Failed to load one or more data sources.');
         }
 
-        const [heatmapData, categoryData, opportunityData] = await Promise.all([
-          heatmapResponse.json(),
-          categoryResponse.json(),
-          opportunityResponse.json()
-        ]);
+        const [categoryData, opportunityData] = await Promise.all([categoryResponse.json(), opportunityResponse.json()]);
 
-        setHeatmap(heatmapData);
         setCategories(categoryData);
         setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
       } catch (fetchError) {
@@ -70,22 +67,16 @@ export default function Home() {
         const params = new URLSearchParams();
         if (filters.minRating !== undefined) params.set('minRating', String(filters.minRating));
         if (filters.minReviews !== undefined) params.set('minReviews', String(filters.minReviews));
-        if (filters.category) params.set('category', filters.category);
 
         const response = await fetch(`${API_BASE}/api/businesses?${params.toString()}`);
         if (!response.ok) {
           throw new Error('Failed to fetch business records.');
         }
 
-        let rows: Business[] = await response.json();
-
-        if (filters.opportunitiesOnly) {
-          rows = rows.filter((biz) => (biz.rating ?? 0) < 3.8 && biz.review_count > 100);
-        }
-
-        setBusinesses(rows);
+        const rows: Business[] = await response.json();
+        setAllBusinesses(rows);
       } catch (fetchError) {
-        setBusinesses([]);
+        setAllBusinesses([]);
         setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
       } finally {
         setLoading(false);
@@ -93,7 +84,7 @@ export default function Home() {
     };
 
     fetchBusinesses();
-  }, [filters]);
+  }, [filters.minRating, filters.minReviews]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3">
@@ -105,7 +96,13 @@ export default function Home() {
           </span>
         </div>
         {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
-        <MapPanel businesses={businesses} heatmap={heatmap} selectedBusiness={selectedBusiness} />
+        <MapPanel
+          businesses={businesses}
+          demandBusinesses={allBusinesses}
+          selectedCategory={filters.category}
+          opportunitiesOnly={filters.opportunitiesOnly}
+          selectedBusiness={selectedBusiness}
+        />
       </section>
 
       <aside>
