@@ -26,7 +26,8 @@ type Props = {
   businesses: Business[];
   allBusinesses: Business[];
   selectedCategory?: string;
-  opportunitiesOnly: boolean;
+  showBusinessMarkers: boolean;
+  opportunityLayerEnabled?: boolean;
   selectedBusiness?: Business | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
@@ -97,8 +98,10 @@ export function MapPanel({
   businesses,
   allBusinesses,
   selectedCategory,
-  opportunitiesOnly,
-  selectedBusiness
+  showBusinessMarkers,
+  opportunityLayerEnabled = false,
+  selectedBusiness,
+  onBoundsChange
 }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -134,6 +137,19 @@ export function MapPanel({
       opportunityLayerRef.current = window.L.layerGroup();
       map.addLayer(clusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
+      const syncBounds = () => {
+        if (!onBoundsChange || !mapRef.current) return;
+        const viewport = mapRef.current.getBounds();
+        onBoundsChange({
+          south: viewport.getSouth(),
+          north: viewport.getNorth(),
+          west: viewport.getWest(),
+          east: viewport.getEast()
+        });
+      };
+      syncBounds();
+      map.on('moveend', syncBounds);
+      map.on('zoomend', syncBounds);
       setMapReady(true);
     };
 
@@ -141,8 +157,15 @@ export function MapPanel({
 
     return () => {
       mounted = false;
+      if (mapRef.current) {
+        mapRef.current.off();
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      clusterLayerRef.current = null;
+      opportunityLayerRef.current = null;
     };
-  }, []);
+  }, [onBoundsChange]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
@@ -172,16 +195,16 @@ export function MapPanel({
     });
 
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
-    if (businesses.length > 0 && !opportunitiesOnly) map.addLayer(clusterLayer);
-  }, [businesses, opportunitiesOnly]);
+    if (businesses.length > 0 && showBusinessMarkers) map.addLayer(clusterLayer);
+  }, [businesses, showBusinessMarkers]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
-    if (!opportunitiesOnly) map.addLayer(clusterLayer);
-  }, [opportunitiesOnly]);
+    if (showBusinessMarkers) map.addLayer(clusterLayer);
+  }, [showBusinessMarkers]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;
@@ -380,7 +403,7 @@ export function MapPanel({
       map.off('moveend', scheduleRender);
       map.off('zoomend', scheduleRender);
     };
-  }, [allBusinesses, businesses, selectedCategory]);
+  }, [allBusinesses, businesses, selectedCategory, opportunityLayerEnabled]);
 
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;

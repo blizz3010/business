@@ -87,10 +87,10 @@ export function Dashboard({
           <label className="flex items-center gap-2 text-slate-200">
             <input
               type="checkbox"
-              checked={filters.opportunitiesOnly}
-              onChange={(event) => onFilterChange({ ...filters, opportunitiesOnly: event.target.checked })}
+              checked={filters.showBusinessMarkers}
+              onChange={(event) => onFilterChange({ ...filters, showBusinessMarkers: event.target.checked })}
             />
-            Show Opportunities Only
+            Show Business Markers
           </label>
         </div>
       </section>
