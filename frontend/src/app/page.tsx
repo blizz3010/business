@@ -10,7 +10,8 @@ const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod
   loading: () => <div className="h-[420px] animate-pulse rounded-xl bg-slate-900 lg:h-[460px]" />
 });
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
@@ -69,6 +70,13 @@ export default function Home() {
 
   useEffect(() => {
     const fetchStaticData = async () => {
+      if (isMisconfiguredProdApiBase) {
+        setError(
+          'Frontend is using a localhost API URL in production. Set NEXT_PUBLIC_API_BASE_URL (or NEXT_PUBLIC_API_URL) to your deployed backend URL.'
+        );
+        return;
+      }
+
       try {
         const [categoryResponse, opportunityResponse] = await Promise.all([
           fetch(`${API_BASE}/api/categories`),
@@ -84,12 +92,16 @@ export default function Home() {
         setCategories(categoryData);
         setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
       } catch (fetchError) {
-        setError(fetchError instanceof Error ? fetchError.message : 'Unable to load analytics data.');
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Unable to load analytics data. Verify API URL and backend CORS settings.'
+        );
       }
     };
 
     fetchStaticData();
-  }, []);
+  }, [isMisconfiguredProdApiBase]);
 
   useEffect(() => {
     const fetchBusinesses = async () => {
@@ -124,7 +136,11 @@ export default function Home() {
         if ((fetchError as Error)?.name === 'AbortError') return;
         setAllBusinesses([]);
         setSelectedBusinesses([]);
-        setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Network error while loading businesses. Verify API URL and backend CORS settings.'
+        );
       } finally {
         if (businessRequestAbortRef.current === controller) {
           setLoading(false);
