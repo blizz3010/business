@@ -27,13 +27,6 @@ type ViewportBounds = {
   east: number;
 };
 
-type ViewportBounds = {
-  south: number;
-  north: number;
-  west: number;
-  east: number;
-};
-
 async function readErrorMessage(response: Response) {
   try {
     const payload = await response.json();
@@ -113,21 +106,20 @@ export default function Home() {
         if (filters.minRating !== undefined) baseParams.set('minRating', String(filters.minRating));
         if (filters.minReviews !== undefined) baseParams.set('minReviews', String(filters.minReviews));
 
-        const allRequest = fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
-        const selectedRequest = (() => {
-          if (!filters.category) return allRequest;
+        const allResponse = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
+        if (!allResponse.ok) throw new Error(await readErrorMessage(allResponse));
+        const allRows: Business[] = await allResponse.json();
+
+        let selectedRows: Business[];
+        if (!filters.category) {
+          selectedRows = allRows;
+        } else {
           const selectedParams = new URLSearchParams(baseParams.toString());
           selectedParams.set('category', filters.category);
-          return fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`);
-        })();
-
-        const [allResponse, selectedResponse] = await Promise.all([allRequest, selectedRequest]);
-        if (!allResponse.ok || !selectedResponse.ok) throw new Error('Failed to fetch business records.');
-
-        const [allRows, selectedRows]: [Business[], Business[]] = await Promise.all([
-          allResponse.json(),
-          selectedResponse.json()
-        ]);
+          const selectedResponse = await fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`);
+          if (!selectedResponse.ok) throw new Error(await readErrorMessage(selectedResponse));
+          selectedRows = await selectedResponse.json();
+        }
 
         setAllBusinesses(allRows);
         setSelectedBusinesses(selectedRows);
@@ -154,11 +146,13 @@ export default function Home() {
         </div>
         {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
         <MapPanel
-          businesses={businesses}
+          businesses={selectedBusinesses}
           allBusinesses={allBusinesses}
           selectedCategory={filters.category}
           opportunitiesOnly={filters.opportunitiesOnly}
+          opportunityLayerEnabled={filters.opportunityLayerEnabled}
           selectedBusiness={selectedBusiness}
+          onBoundsChange={setBounds}
         />
       </section>
 
