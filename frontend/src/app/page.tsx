@@ -16,7 +16,7 @@ const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
   minReviews: undefined,
   category: undefined,
-  opportunitiesOnly: false,
+  showBusinessMarkers: true,
   opportunityLayerEnabled: true
 };
 

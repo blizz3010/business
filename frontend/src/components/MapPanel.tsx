@@ -195,16 +195,16 @@ export function MapPanel({
     });
 
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
-    if (businesses.length > 0 && !opportunitiesOnly) map.addLayer(clusterLayer);
-  }, [businesses, opportunitiesOnly]);
+    if (businesses.length > 0 && showBusinessMarkers) map.addLayer(clusterLayer);
+  }, [businesses, showBusinessMarkers]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
-    if (!opportunitiesOnly) map.addLayer(clusterLayer);
-  }, [opportunitiesOnly]);
+    if (showBusinessMarkers) map.addLayer(clusterLayer);
+  }, [showBusinessMarkers]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;
