@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
 import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
@@ -63,6 +63,7 @@ export default function Home() {
   const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const businessRequestAbortRef = useRef<AbortController | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
 
@@ -71,7 +72,7 @@ export default function Home() {
       try {
         const [categoryResponse, opportunityResponse] = await Promise.all([
           fetch(`${API_BASE}/api/categories`),
-          fetch(`${API_BASE}/api/opportunities`)
+          fetch(`${API_BASE}/api/priority-targets`)
         ]);
 
         if (!categoryResponse.ok || !opportunityResponse.ok) {
@@ -92,7 +93,13 @@ export default function Home() {
 
   useEffect(() => {
     const fetchBusinesses = async () => {
-      if (!bounds) return;
+      if (!hasValidBounds(bounds)) return;
+
+      if (businessRequestAbortRef.current) {
+        businessRequestAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      businessRequestAbortRef.current = controller;
       setLoading(true);
       setError(null);
 
@@ -105,34 +112,32 @@ export default function Home() {
         });
         if (filters.minRating !== undefined) baseParams.set('minRating', String(filters.minRating));
         if (filters.minReviews !== undefined) baseParams.set('minReviews', String(filters.minReviews));
+        const response = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(await readErrorMessage(response));
+        const rows: Business[] = await response.json();
 
-        const allResponse = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
-        if (!allResponse.ok) throw new Error(await readErrorMessage(allResponse));
-        const allRows: Business[] = await allResponse.json();
-
-        let selectedRows: Business[];
-        if (!filters.category) {
-          selectedRows = allRows;
-        } else {
-          const selectedParams = new URLSearchParams(baseParams.toString());
-          selectedParams.set('category', filters.category);
-          const selectedResponse = await fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`);
-          if (!selectedResponse.ok) throw new Error(await readErrorMessage(selectedResponse));
-          selectedRows = await selectedResponse.json();
-        }
-
-        setAllBusinesses(allRows);
-        setSelectedBusinesses(selectedRows);
+        setAllBusinesses(rows);
+        setSelectedBusinesses(
+          filters.category ? rows.filter((business) => business.normalized_category === filters.category) : rows
+        );
       } catch (fetchError) {
+        if ((fetchError as Error)?.name === 'AbortError') return;
         setAllBusinesses([]);
         setSelectedBusinesses([]);
         setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
       } finally {
-        setLoading(false);
+        if (businessRequestAbortRef.current === controller) {
+          setLoading(false);
+        }
       }
     };
 
     fetchBusinesses();
+    return () => {
+      if (businessRequestAbortRef.current) {
+        businessRequestAbortRef.current.abort();
+      }
+    };
   }, [bounds, filters.category, filters.minRating, filters.minReviews]);
 
   return (
