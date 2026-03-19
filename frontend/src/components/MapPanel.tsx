@@ -73,11 +73,10 @@ export function MapPanel({
     const init = async () => {
       if (!mapElementRef.current) return;
 
-      const [leafletModule] = await Promise.all([
-        import('leaflet'),
-        import('leaflet.markercluster')
-      ]);
+      const leafletModule = await import('leaflet');
       const L = leafletModule.default;
+      (window as any).L = L;
+      await import('leaflet.markercluster');
       if (!mounted || !L || mapRef.current) return;
 
       leafletRef.current = {
