@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Business } from '@/lib/types';
 
 declare global {
@@ -28,6 +28,7 @@ type Props = {
   selectedCategory?: string;
   opportunitiesOnly: boolean;
   selectedBusiness?: Business | null;
+  onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
 
 function loadStyle(href: string) {
@@ -104,6 +105,7 @@ export function MapPanel({
   const clusterLayerRef = useRef<any>(null);
   const opportunityLayerRef = useRef<any>(null);
   const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -132,6 +134,7 @@ export function MapPanel({
       opportunityLayerRef.current = window.L.layerGroup();
       map.addLayer(clusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
+      setMapReady(true);
     };
 
     init();
@@ -185,6 +188,10 @@ export function MapPanel({
 
     const map = mapRef.current;
     const layer = opportunityLayerRef.current;
+
+    if (map.hasLayer(layer)) map.removeLayer(layer);
+    if (!opportunityLayerEnabled) return;
+    map.addLayer(layer);
 
     const renderOpportunityGrid = () => {
       if (!mapRef.current || !opportunityLayerRef.current) return;

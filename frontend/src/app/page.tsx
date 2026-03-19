@@ -16,23 +16,29 @@ const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
   minReviews: undefined,
   category: undefined,
-  opportunitiesOnly: false
+  opportunitiesOnly: false,
+  opportunityLayerEnabled: true
+};
+
+type ViewportBounds = {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
 };
 
 export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
+  const [selectedBusinesses, setSelectedBusinesses] = useState<Business[]>([]);
   const [opportunities, setOpportunities] = useState<Business[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
-  const businesses = useMemo(() => {
-    if (!filters.category) return allBusinesses;
-    return allBusinesses.filter((biz) => biz.normalized_category === filters.category || biz.category === filters.category);
-  }, [allBusinesses, filters.category]);
 
   useEffect(() => {
     const fetchStaticData = async () => {
@@ -60,23 +66,41 @@ export default function Home() {
 
   useEffect(() => {
     const fetchBusinesses = async () => {
+      if (!bounds) return;
       setLoading(true);
       setError(null);
 
       try {
-        const params = new URLSearchParams();
-        if (filters.minRating !== undefined) params.set('minRating', String(filters.minRating));
-        if (filters.minReviews !== undefined) params.set('minReviews', String(filters.minReviews));
+        const baseParams = new URLSearchParams({
+          south: String(bounds.south),
+          north: String(bounds.north),
+          west: String(bounds.west),
+          east: String(bounds.east)
+        });
+        if (filters.minRating !== undefined) baseParams.set('minRating', String(filters.minRating));
+        if (filters.minReviews !== undefined) baseParams.set('minReviews', String(filters.minReviews));
 
-        const response = await fetch(`${API_BASE}/api/businesses?${params.toString()}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch business records.');
-        }
+        const allRequest = fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
+        const selectedRequest = (() => {
+          if (!filters.category) return allRequest;
+          const selectedParams = new URLSearchParams(baseParams.toString());
+          selectedParams.set('category', filters.category);
+          return fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`);
+        })();
 
-        const rows: Business[] = await response.json();
-        setAllBusinesses(rows);
+        const [allResponse, selectedResponse] = await Promise.all([allRequest, selectedRequest]);
+        if (!allResponse.ok || !selectedResponse.ok) throw new Error('Failed to fetch business records.');
+
+        const [allRows, selectedRows]: [Business[], Business[]] = await Promise.all([
+          allResponse.json(),
+          selectedResponse.json()
+        ]);
+
+        setAllBusinesses(allRows);
+        setSelectedBusinesses(selectedRows);
       } catch (fetchError) {
         setAllBusinesses([]);
+        setSelectedBusinesses([]);
         setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
       } finally {
         setLoading(false);
@@ -84,7 +108,7 @@ export default function Home() {
     };
 
     fetchBusinesses();
-  }, [filters.minRating, filters.minReviews]);
+  }, [bounds, filters.category, filters.minRating, filters.minReviews]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3">
@@ -92,7 +116,7 @@ export default function Home() {
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">Business Opportunity Intelligence</h1>
           <span className="rounded bg-slate-800 px-3 py-1 text-sm text-slate-300">
-            {loading ? 'Loading...' : `${businesses.length} businesses`}
+            {loading ? 'Loading...' : `${selectedBusinesses.length} businesses`}
           </span>
         </div>
         {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
