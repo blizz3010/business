@@ -96,13 +96,7 @@ export default function Home() {
           </span>
         </div>
         {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
-        <MapPanel
-          businesses={businesses}
-          demandBusinesses={allBusinesses}
-          selectedCategory={filters.category}
-          opportunitiesOnly={filters.opportunitiesOnly}
-          selectedBusiness={selectedBusiness}
-        />
+        <MapPanel businesses={businesses} selectedBusiness={selectedBusiness} />
       </section>
 
       <aside>

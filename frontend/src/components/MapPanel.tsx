@@ -12,16 +12,9 @@ declare global {
 const ORLANDO_CENTER: [number, number] = [28.5383, -81.3792];
 const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const MARKER_CLUSTER_JS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
-const MARKER_CLUSTER_CSS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
-const MARKER_CLUSTER_DEFAULT_CSS =
-  'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
 
 type Props = {
   businesses: Business[];
-  demandBusinesses: Business[];
-  selectedCategory?: string;
-  opportunitiesOnly: boolean;
   selectedBusiness?: Business | null;
 };
 
@@ -88,10 +81,9 @@ function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function MapPanel({ businesses, demandBusinesses, selectedCategory, opportunitiesOnly, selectedBusiness }: Props) {
+export function MapPanel({ businesses, selectedBusiness }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const businessClusterLayerRef = useRef<any>(null);
   const opportunityLayerRef = useRef<any>(null);
   const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,10 +94,7 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
       if (!mapElementRef.current) return;
 
       loadStyle(LEAFLET_CSS);
-      loadStyle(MARKER_CLUSTER_CSS);
-      loadStyle(MARKER_CLUSTER_DEFAULT_CSS);
       await loadScript(LEAFLET_JS);
-      await loadScript(MARKER_CLUSTER_JS);
 
       if (!mounted || !window.L || mapRef.current) return;
 
@@ -115,9 +104,7 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
       }).addTo(map);
 
       mapRef.current = map;
-      businessClusterLayerRef.current = window.L.markerClusterGroup();
       opportunityLayerRef.current = window.L.layerGroup();
-      map.addLayer(businessClusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
     };
 
@@ -129,42 +116,10 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
   }, []);
 
   useEffect(() => {
-    if (!window.L || !mapRef.current || !businessClusterLayerRef.current) return;
-
-    const clusterLayer = businessClusterLayerRef.current;
-    clusterLayer.clearLayers();
-
-    if (opportunitiesOnly) return;
-
-    for (const business of businesses) {
-      const marker = window.L.circleMarker([business.lat, business.lng], {
-        radius: 6,
-        color: '#38bdf8',
-        fillColor: '#38bdf8',
-        fillOpacity: 0.9,
-        weight: 1
-      });
-
-      marker.bindPopup(`
-        <div style="font-size:12px;line-height:1.4;">
-          <strong>${escapeHtml(business.name)}</strong><br/>
-          ${escapeHtml(business.normalized_category)}<br/>
-          Rating: <strong>${business.rating ?? 'N/A'}</strong> · Reviews: <strong>${business.review_count}</strong>
-        </div>
-      `);
-      clusterLayer.addLayer(marker);
-    }
-  }, [businesses, opportunitiesOnly]);
-
-  useEffect(() => {
     if (!window.L || !mapRef.current || !opportunityLayerRef.current) return;
 
     const map = mapRef.current;
     const layer = opportunityLayerRef.current;
-    const nearbyRadiusKm = 1;
-    const minDemandCount = 3;
-    const minOpportunityScore = 35;
-    const maxCellsPerViewport = 120;
 
     const renderOpportunityGrid = () => {
       if (!mapRef.current || !opportunityLayerRef.current) return;
@@ -183,11 +138,7 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
       const west = bounds.getWest();
       const east = bounds.getEast();
 
-      const viewportDemandBusinesses = demandBusinesses.filter(
-        (business) =>
-          business.lat >= south && business.lat <= north && business.lng >= west && business.lng <= east
-      );
-      const viewportCompetitors = businesses.filter(
+      const viewportBusinesses = businesses.filter(
         (business) =>
           business.lat >= south && business.lat <= north && business.lng >= west && business.lng <= east
       );
@@ -195,55 +146,24 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
       const cells: Array<{
         centerLat: number;
         centerLng: number;
-        nearbyDemandBusinesses: Business[];
-        nearbyCompetitors: Business[];
+        businesses: Business[];
         dominantCategory: string;
         opportunityScore: number;
-        demandScore: number;
-        scarcityScore: number;
-        qualityGapScore: number;
-        avgCompetitorRating: number;
-        avgCompetitorReviews: number;
       }> = [];
 
-      let maxDemand = 0;
-      let maxCompetitors = 0;
-      let maxAvgRating = 0;
-      let maxAvgReviews = 0;
+      let maxDensity = 0;
 
       for (let lat = south; lat < north; lat += latStep) {
         for (let lng = west; lng < east; lng += lngStep) {
-          const centerCellLat = lat + latStep / 2;
-          const centerCellLng = lng + lngStep / 2;
-          const nearbyDemandBusinesses = viewportDemandBusinesses.filter(
-            (business) => distanceKm(centerCellLat, centerCellLng, business.lat, business.lng) <= nearbyRadiusKm
-          );
-          const nearbyCompetitors = viewportCompetitors.filter(
-            (business) => distanceKm(centerCellLat, centerCellLng, business.lat, business.lng) <= nearbyRadiusKm
-          );
-          if (nearbyDemandBusinesses.length < minDemandCount) continue;
-
-          const avgCompetitorRating =
-            nearbyCompetitors.length === 0
-              ? 0
-              : nearbyCompetitors.reduce((sum, business) => sum + (business.rating ?? 0), 0) / nearbyCompetitors.length;
-          const avgCompetitorReviews =
-            nearbyCompetitors.length === 0
-              ? 0
-              : nearbyCompetitors.reduce((sum, business) => sum + business.review_count, 0) / nearbyCompetitors.length;
-
-          maxDemand = Math.max(maxDemand, nearbyDemandBusinesses.length);
-          maxCompetitors = Math.max(maxCompetitors, nearbyCompetitors.length);
-          maxAvgRating = Math.max(maxAvgRating, avgCompetitorRating);
-          maxAvgReviews = Math.max(maxAvgReviews, avgCompetitorReviews);
-
-          const cellBusinesses = nearbyDemandBusinesses.filter(
+          const cellBusinesses = viewportBusinesses.filter(
             (business) =>
               business.lat >= lat &&
               business.lat < lat + latStep &&
               business.lng >= lng &&
               business.lng < lng + lngStep
           );
+
+          maxDensity = Math.max(maxDensity, cellBusinesses.length);
           const categoryCounter = new Map<string, number>();
           for (const business of cellBusinesses) {
             categoryCounter.set(business.normalized_category, (categoryCounter.get(business.normalized_category) ?? 0) + 1);
@@ -259,53 +179,26 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
           });
 
           cells.push({
-            centerLat: centerCellLat,
-            centerLng: centerCellLng,
-            nearbyDemandBusinesses,
-            nearbyCompetitors,
+            centerLat: lat + latStep / 2,
+            centerLng: lng + lngStep / 2,
+            businesses: cellBusinesses,
             dominantCategory,
-            opportunityScore: 0,
-            demandScore: 0,
-            scarcityScore: 0,
-            qualityGapScore: 0,
-            avgCompetitorRating,
-            avgCompetitorReviews
+            opportunityScore: 100
           });
         }
       }
 
-      const scoredCells = cells
-        .map((cell) => {
-          const demandScore = maxDemand === 0 ? 0 : (cell.nearbyDemandBusinesses.length / maxDemand) * 100;
-          const scarcityScore =
-            maxCompetitors === 0 ? 100 : Math.max(0, (1 - cell.nearbyCompetitors.length / maxCompetitors) * 100);
-          const ratingGapScore =
-            maxAvgRating === 0 ? 100 : Math.max(0, (1 - cell.avgCompetitorRating / maxAvgRating) * 100);
-          const reviewsGapScore =
-            maxAvgReviews === 0 ? 100 : Math.max(0, (1 - cell.avgCompetitorReviews / maxAvgReviews) * 100);
-          const qualityGapScore = cell.nearbyCompetitors.length === 0 ? 100 : Math.round((ratingGapScore + reviewsGapScore) / 2);
-          const opportunityScore = Math.round(0.45 * demandScore + 0.35 * scarcityScore + 0.2 * qualityGapScore);
-          return { ...cell, demandScore, scarcityScore, qualityGapScore, opportunityScore };
-        })
-        .filter((cell) => cell.opportunityScore >= minOpportunityScore)
-        .sort((a, b) => b.opportunityScore - a.opportunityScore)
-        .slice(0, maxCellsPerViewport);
-
-      for (const cell of scoredCells) {
-        const nearbyBusinesses = cell.nearbyDemandBusinesses
+      for (const cell of cells) {
+        const density = cell.businesses.length;
+        cell.opportunityScore = maxDensity === 0 ? 100 : Math.round((1 - density / maxDensity) * 100);
+        const nearbyBusinesses = viewportBusinesses
           .map((business) => ({
             business,
             distance: distanceKm(cell.centerLat, cell.centerLng, business.lat, business.lng)
           }))
+          .filter((item) => item.distance <= 1)
           .sort((a, b) => a.distance - b.distance)
-          .slice(0, 6);
-        const nearbyCompetitors = cell.nearbyCompetitors
-          .map((business) => ({
-            business,
-            distance: distanceKm(cell.centerLat, cell.centerLng, business.lat, business.lng)
-          }))
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 6);
+          .slice(0, 8);
 
         const nearbyListHtml =
           nearbyBusinesses.length === 0
@@ -314,15 +207,6 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
                 .map(
                   ({ business, distance }) =>
                     `• ${escapeHtml(business.name)} (${escapeHtml(business.normalized_category)}) - ${distance.toFixed(2)}km`
-                )
-                .join('<br/>');
-        const competitorListHtml =
-          nearbyCompetitors.length === 0
-            ? '<em>No nearby competitors in selected category</em>'
-            : nearbyCompetitors
-                .map(
-                  ({ business, distance }) =>
-                    `• ${escapeHtml(business.name)} (⭐ ${business.rating ?? 'N/A'}, ${business.review_count} reviews) - ${distance.toFixed(2)}km`
                 )
                 .join('<br/>');
 
@@ -337,17 +221,9 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
         marker.bindPopup(`
           <div style="font-size:12px;line-height:1.4;max-width:280px;">
             <strong>Opportunity Cell</strong><br/>
+            Businesses: <strong>${cell.businesses.length}</strong><br/>
+            Category: <strong>${escapeHtml(cell.dominantCategory)}</strong><br/>
             Opportunity Score: <strong>${cell.opportunityScore}</strong><br/>
-            Selected Category: <strong>${escapeHtml(selectedCategory ?? 'All categories')}</strong><br/>
-            Nearby Businesses (all): <strong>${cell.nearbyDemandBusinesses.length}</strong><br/>
-            Nearby Competitors (${escapeHtml(selectedCategory ?? 'all')}): <strong>${cell.nearbyCompetitors.length}</strong><br/>
-            Avg Competitor Rating: <strong>${cell.avgCompetitorRating.toFixed(2)}</strong><br/>
-            Avg Competitor Reviews: <strong>${cell.avgCompetitorReviews.toFixed(0)}</strong><br/>
-            Dominant Cell Category: <strong>${escapeHtml(cell.dominantCategory)}</strong><br/>
-            Demand / Scarcity / QualityGap: <strong>${Math.round(cell.demandScore)} / ${Math.round(
-          cell.scarcityScore
-        )} / ${Math.round(cell.qualityGapScore)}</strong><br/>
-            Nearby Competitors:<br/>${competitorListHtml}<br/><br/>
             Nearby Businesses:<br/>${nearbyListHtml}
           </div>
         `);
@@ -370,7 +246,7 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
       map.off('moveend', scheduleRender);
       map.off('zoomend', scheduleRender);
     };
-  }, [businesses, demandBusinesses, selectedCategory]);
+  }, [businesses]);
 
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;
@@ -379,7 +255,7 @@ export function MapPanel({ businesses, demandBusinesses, selectedCategory, oppor
 
   return (
     <div className="relative h-full min-h-[520px] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-      <div className="pointer-events-none absolute bottom-3 left-3 z-[5000] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
+      <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
         <p className="mb-2 font-semibold">Opportunity Heatmap</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
