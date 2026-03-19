@@ -27,6 +27,39 @@ type ViewportBounds = {
   east: number;
 };
 
+type ViewportBounds = {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+};
+
+async function readErrorMessage(response: Response) {
+  try {
+    const payload = await response.json();
+    if (payload?.error && payload?.details) return `${payload.error}: ${payload.details}`;
+    if (payload?.error) return String(payload.error);
+    if (payload?.message) return String(payload.message);
+  } catch {
+    // no-op: fallback to status text below
+  }
+
+  return `Request failed (${response.status} ${response.statusText})`;
+}
+
+function hasValidBounds(bounds: ViewportBounds | null): bounds is ViewportBounds {
+  if (!bounds) return false;
+  const { south, north, west, east } = bounds;
+  return (
+    Number.isFinite(south) &&
+    Number.isFinite(north) &&
+    Number.isFinite(west) &&
+    Number.isFinite(east) &&
+    south < north &&
+    west < east
+  );
+}
+
 export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
