@@ -20,6 +20,20 @@ const DEFAULT_FILTERS: BusinessFilters = {
   opportunityLayerEnabled: true
 };
 
+type ViewportBounds = {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+};
+
+type ViewportBounds = {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+};
+
 async function readErrorMessage(response: Response) {
   try {
     const payload = await response.json();
@@ -33,9 +47,7 @@ async function readErrorMessage(response: Response) {
   return `Request failed (${response.status} ${response.statusText})`;
 }
 
-function hasValidBounds(
-  bounds: { south: number; north: number; west: number; east: number } | null
-): bounds is { south: number; north: number; west: number; east: number } {
+function hasValidBounds(bounds: ViewportBounds | null): bounds is ViewportBounds {
   if (!bounds) return false;
   const { south, north, west, east } = bounds;
   return (
@@ -55,7 +67,7 @@ export default function Home() {
   const [opportunities, setOpportunities] = useState<Business[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
-  const [bounds, setBounds] = useState<{ south: number; north: number; west: number; east: number } | null>(null);
+  const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,7 +99,7 @@ export default function Home() {
 
   useEffect(() => {
     const fetchBusinesses = async () => {
-      if (!hasValidBounds(bounds)) return;
+      if (!bounds) return;
       setLoading(true);
       setError(null);
 
@@ -101,26 +113,22 @@ export default function Home() {
         if (filters.minRating !== undefined) baseParams.set('minRating', String(filters.minRating));
         if (filters.minReviews !== undefined) baseParams.set('minReviews', String(filters.minReviews));
 
-        if (!filters.category) {
-          const response = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
-          if (!response.ok) throw new Error(await readErrorMessage(response));
-          const rows: Business[] = await response.json();
-          setAllBusinesses(rows);
-          setSelectedBusinesses(rows);
-          return;
-        }
+        const allRequest = fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
+        const selectedRequest = (() => {
+          if (!filters.category) return allRequest;
+          const selectedParams = new URLSearchParams(baseParams.toString());
+          selectedParams.set('category', filters.category);
+          return fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`);
+        })();
 
-        const selectedParams = new URLSearchParams(baseParams.toString());
-        selectedParams.set('category', filters.category);
+        const [allResponse, selectedResponse] = await Promise.all([allRequest, selectedRequest]);
+        if (!allResponse.ok || !selectedResponse.ok) throw new Error('Failed to fetch business records.');
 
-        const [allResponse, selectedResponse] = await Promise.all([
-          fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`),
-          fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`)
+        const [allRows, selectedRows]: [Business[], Business[]] = await Promise.all([
+          allResponse.json(),
+          selectedResponse.json()
         ]);
-        if (!allResponse.ok) throw new Error(await readErrorMessage(allResponse));
-        if (!selectedResponse.ok) throw new Error(await readErrorMessage(selectedResponse));
 
-        const [allRows, selectedRows]: [Business[], Business[]] = await Promise.all([allResponse.json(), selectedResponse.json()]);
         setAllBusinesses(allRows);
         setSelectedBusinesses(selectedRows);
       } catch (fetchError) {
@@ -146,13 +154,11 @@ export default function Home() {
         </div>
         {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
         <MapPanel
-          businesses={selectedBusinesses}
+          businesses={businesses}
           allBusinesses={allBusinesses}
           selectedCategory={filters.category}
           opportunitiesOnly={filters.opportunitiesOnly}
-          opportunityLayerEnabled={filters.opportunityLayerEnabled}
           selectedBusiness={selectedBusiness}
-          onBoundsChange={setBounds}
         />
       </section>
 
