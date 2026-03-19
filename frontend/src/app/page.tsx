@@ -74,6 +74,7 @@ export default function Home() {
   const isMisconfiguredProdApiBase =
     typeof window !== 'undefined' && !isLocalhostHost(window.location.hostname) && API_BASE.includes('localhost');
 
+  // ── Load static data (categories + priority targets) ───────────────────
   useEffect(() => {
     const fetchStaticData = async () => {
       if (isMisconfiguredProdApiBase) {
@@ -109,6 +110,7 @@ export default function Home() {
     fetchStaticData();
   }, [isMisconfiguredProdApiBase]);
 
+  // ── Load businesses for the current viewport ───────────────────────────
   useEffect(() => {
     const fetchBusinesses = async () => {
       if (!hasValidBounds(bounds)) return;
