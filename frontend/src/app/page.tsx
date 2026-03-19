@@ -21,7 +21,7 @@ const DEFAULT_FILTERS: BusinessFilters = {
 
 export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
-  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [opportunities, setOpportunities] = useState<Business[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
@@ -29,6 +29,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
+  const businesses = useMemo(() => {
+    if (!filters.category) return allBusinesses;
+    return allBusinesses.filter((biz) => biz.normalized_category === filters.category || biz.category === filters.category);
+  }, [allBusinesses, filters.category]);
 
   useEffect(() => {
     const fetchStaticData = async () => {
@@ -63,22 +67,16 @@ export default function Home() {
         const params = new URLSearchParams();
         if (filters.minRating !== undefined) params.set('minRating', String(filters.minRating));
         if (filters.minReviews !== undefined) params.set('minReviews', String(filters.minReviews));
-        if (filters.category) params.set('category', filters.category);
 
         const response = await fetch(`${API_BASE}/api/businesses?${params.toString()}`);
         if (!response.ok) {
           throw new Error('Failed to fetch business records.');
         }
 
-        let rows: Business[] = await response.json();
-
-        if (filters.opportunitiesOnly) {
-          rows = rows.filter((biz) => (biz.rating ?? 0) < 3.8 && biz.review_count > 100);
-        }
-
-        setBusinesses(rows);
+        const rows: Business[] = await response.json();
+        setAllBusinesses(rows);
       } catch (fetchError) {
-        setBusinesses([]);
+        setAllBusinesses([]);
         setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
       } finally {
         setLoading(false);
@@ -86,7 +84,7 @@ export default function Home() {
     };
 
     fetchBusinesses();
-  }, [filters]);
+  }, [filters.minRating, filters.minReviews]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3">
