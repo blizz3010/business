@@ -149,7 +149,7 @@ export default function Home() {
           businesses={selectedBusinesses}
           allBusinesses={allBusinesses}
           selectedCategory={filters.category}
-          opportunitiesOnly={filters.opportunitiesOnly}
+          showBusinessMarkers={filters.showBusinessMarkers}
           opportunityLayerEnabled={filters.opportunityLayerEnabled}
           selectedBusiness={selectedBusiness}
           onBoundsChange={setBounds}
