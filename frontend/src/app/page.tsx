@@ -65,11 +65,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const businessRequestAbortRef = useRef<AbortController | null>(null);
-  const isMisconfiguredProdApiBase =
-    typeof window !== 'undefined' &&
-    window.location.hostname !== 'localhost' &&
-    window.location.hostname !== '127.0.0.1' &&
-    API_BASE.includes('localhost');
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
 
@@ -110,7 +105,6 @@ export default function Home() {
 
   useEffect(() => {
     const fetchBusinesses = async () => {
-      if (isMisconfiguredProdApiBase) return;
       if (!hasValidBounds(bounds)) return;
 
       if (businessRequestAbortRef.current) {
@@ -160,7 +154,7 @@ export default function Home() {
         businessRequestAbortRef.current.abort();
       }
     };
-  }, [bounds, filters.category, filters.minRating, filters.minReviews, isMisconfiguredProdApiBase]);
+  }, [bounds, filters.category, filters.minRating, filters.minReviews]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
