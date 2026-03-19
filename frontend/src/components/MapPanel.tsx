@@ -17,6 +17,7 @@ const MARKER_CLUSTER_CSS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/M
 const MARKER_CLUSTER_DEFAULT_CSS =
   'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
 
+const OPPORTUNITY_ENABLED = true;
 const MAX_OPPORTUNITY_CELLS = 40;
 const MIN_DEMAND_COUNT = 4;
 const MIN_OPPORTUNITY_SCORE = 45;
@@ -26,7 +27,6 @@ type Props = {
   allBusinesses: Business[];
   selectedCategory?: string;
   opportunitiesOnly: boolean;
-  opportunityLayerEnabled: boolean;
   selectedBusiness?: Business | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
@@ -98,8 +98,6 @@ export function MapPanel({
   allBusinesses,
   selectedCategory,
   opportunitiesOnly,
-  opportunityLayerEnabled,
-  onBoundsChange,
   selectedBusiness
 }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
@@ -186,7 +184,7 @@ export function MapPanel({
   }, [opportunitiesOnly]);
 
   useEffect(() => {
-    if (!window.L || !mapRef.current || !opportunityLayerRef.current) return;
+    if (!window.L || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;
 
     const map = mapRef.current;
     const layer = opportunityLayerRef.current;
@@ -305,7 +303,7 @@ export function MapPanel({
         const competitorStrength = 0.7 * normalizedRating + 0.3 * normalizedReviews;
         const qualityGapScore = 1 - competitorStrength;
 
-        cell.opportunityScore = Math.round((0.45 * demandScore + 0.35 * scarcityScore + 0.2 * qualityGapScore) * 100);
+        cell.opportunityScore = Math.round((0.4 * demandScore + 0.35 * scarcityScore + 0.25 * qualityGapScore) * 100);
       }
 
       const renderableCells = cells
@@ -382,31 +380,7 @@ export function MapPanel({
       map.off('moveend', scheduleRender);
       map.off('zoomend', scheduleRender);
     };
-  }, [allBusinesses, businesses, selectedCategory, opportunityLayerEnabled]);
-
-  useEffect(() => {
-    if (!mapRef.current || !onBoundsChange) return;
-    const map = mapRef.current;
-
-    const publishBounds = () => {
-      const bounds = map.getBounds();
-      onBoundsChange({
-        south: bounds.getSouth(),
-        north: bounds.getNorth(),
-        west: bounds.getWest(),
-        east: bounds.getEast()
-      });
-    };
-
-    publishBounds();
-    map.on('moveend', publishBounds);
-    map.on('zoomend', publishBounds);
-
-    return () => {
-      map.off('moveend', publishBounds);
-      map.off('zoomend', publishBounds);
-    };
-  }, [mapReady, onBoundsChange]);
+  }, [allBusinesses, businesses, selectedCategory]);
 
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;
@@ -415,7 +389,7 @@ export function MapPanel({
 
   return (
     <div className="relative h-full min-h-[520px] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-      {opportunityLayerEnabled ? (
+      {OPPORTUNITY_ENABLED ? (
         <div className="pointer-events-none absolute bottom-3 left-3 z-[1200] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
           <p className="mb-2 font-semibold">Opportunity Layer</p>
           <div className="space-y-1">
