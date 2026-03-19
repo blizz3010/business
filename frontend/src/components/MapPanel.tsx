@@ -1,26 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Business } from '@/lib/types';
 
-declare global {
-  interface Window {
-    L: any;
-  }
-}
-
 const ORLANDO_CENTER: [number, number] = [28.5383, -81.3792];
-const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const MARKER_CLUSTER_JS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
-const MARKER_CLUSTER_CSS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
-const MARKER_CLUSTER_DEFAULT_CSS =
-  'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
-
 const OPPORTUNITY_ENABLED = true;
 const MAX_OPPORTUNITY_CELLS = 40;
 const MIN_DEMAND_COUNT = 4;
 const MIN_OPPORTUNITY_SCORE = 45;
+const SPATIAL_BUCKET_SIZE_KM = 0.6;
 
 type Props = {
   businesses: Business[];
@@ -32,29 +20,16 @@ type Props = {
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
 
-function loadStyle(href: string) {
-  if (document.querySelector(`link[href="${href}"]`)) return;
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = href;
-  document.head.appendChild(link);
-}
+type LeafletRuntime = {
+  map: any;
+  tileLayer: any;
+  markerClusterGroup: any;
+  layerGroup: any;
+  rectangle: any;
+  circleMarker: any;
+};
 
-function loadScript(src: string) {
-  return new Promise<void>((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
-}
+type SpatialEntry = { business: Business; latBucket: number; lngBucket: number };
 
 function escapeHtml(value: string) {
   return value
@@ -94,6 +69,58 @@ function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function buildSpatialBuckets(input: Business[]) {
+  const buckets = new Map<string, SpatialEntry[]>();
+
+  input.forEach((business) => {
+    const latBucket = Math.floor(business.lat / (SPATIAL_BUCKET_SIZE_KM / 111.32));
+    const lngBucket = Math.floor(
+      business.lng / (SPATIAL_BUCKET_SIZE_KM / (111.32 * Math.max(Math.cos((business.lat * Math.PI) / 180), 0.2)))
+    );
+    const key = `${latBucket}:${lngBucket}`;
+    const existing = buckets.get(key);
+    const entry: SpatialEntry = { business, latBucket, lngBucket };
+    if (existing) {
+      existing.push(entry);
+    } else {
+      buckets.set(key, [entry]);
+    }
+  });
+
+  return buckets;
+}
+
+function nearbyFromBuckets(
+  buckets: Map<string, SpatialEntry[]>,
+  centerLat: number,
+  centerLng: number,
+  radiusKm: number
+): Array<{ business: Business; distance: number }> {
+  const latBucket = Math.floor(centerLat / (SPATIAL_BUCKET_SIZE_KM / 111.32));
+  const lngBucket = Math.floor(
+    centerLng / (SPATIAL_BUCKET_SIZE_KM / (111.32 * Math.max(Math.cos((centerLat * Math.PI) / 180), 0.2)))
+  );
+  const nearby: Array<{ business: Business; distance: number }> = [];
+
+  for (let latOffset = -2; latOffset <= 2; latOffset += 1) {
+    for (let lngOffset = -2; lngOffset <= 2; lngOffset += 1) {
+      const key = `${latBucket + latOffset}:${lngBucket + lngOffset}`;
+      const entries = buckets.get(key);
+      if (!entries?.length) continue;
+
+      entries.forEach(({ business }) => {
+        const distance = distanceKm(centerLat, centerLng, business.lat, business.lng);
+        if (distance <= radiusKm) {
+          nearby.push({ business, distance });
+        }
+      });
+    }
+  }
+
+  nearby.sort((a, b) => a.distance - b.distance);
+  return nearby;
+}
+
 export function MapPanel({
   businesses,
   allBusinesses,
@@ -107,8 +134,12 @@ export function MapPanel({
   const mapRef = useRef<any>(null);
   const clusterLayerRef = useRef<any>(null);
   const opportunityLayerRef = useRef<any>(null);
+  const leafletRef = useRef<LeafletRuntime | null>(null);
   const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mapReady, setMapReady] = useState(false);
+
+  const allBusinessesBuckets = useMemo(() => buildSpatialBuckets(allBusinesses), [allBusinesses]);
+  const selectedBusinessesBuckets = useMemo(() => buildSpatialBuckets(businesses), [businesses]);
 
   useEffect(() => {
     let mounted = true;
@@ -116,27 +147,33 @@ export function MapPanel({
     const init = async () => {
       if (!mapElementRef.current) return;
 
-      loadStyle(LEAFLET_CSS);
-      loadStyle(MARKER_CLUSTER_CSS);
-      loadStyle(MARKER_CLUSTER_DEFAULT_CSS);
-      await loadScript(LEAFLET_JS);
-      await loadScript(MARKER_CLUSTER_JS);
+      const [leafletModule] = await Promise.all([
+        import('leaflet'),
+        import('leaflet.markercluster/dist/leaflet.markercluster.js')
+      ]);
+      const L = leafletModule.default;
+      if (!mounted || !L || mapRef.current) return;
 
-      if (!mounted || !window.L || mapRef.current) return;
+      leafletRef.current = {
+        map: L.map,
+        tileLayer: L.tileLayer,
+        markerClusterGroup: L.markerClusterGroup,
+        layerGroup: L.layerGroup,
+        rectangle: L.rectangle,
+        circleMarker: L.circleMarker
+      };
 
-      const map = window.L.map(mapElementRef.current).setView(ORLANDO_CENTER, 11);
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      const map = L.map(mapElementRef.current).setView(ORLANDO_CENTER, 11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
       mapRef.current = map;
-      clusterLayerRef.current = window.L.markerClusterGroup({
-        showCoverageOnHover: false,
-        maxClusterRadius: 45
-      });
-      opportunityLayerRef.current = window.L.layerGroup();
+      clusterLayerRef.current = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 45 });
+      opportunityLayerRef.current = L.layerGroup();
       map.addLayer(clusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
+
       const syncBounds = () => {
         if (!onBoundsChange || !mapRef.current) return;
         const viewport = mapRef.current.getBounds();
@@ -147,6 +184,7 @@ export function MapPanel({
           east: viewport.getEast()
         });
       };
+
       syncBounds();
       map.on('moveend', syncBounds);
       map.on('zoomend', syncBounds);
@@ -165,6 +203,7 @@ export function MapPanel({
       }
       clusterLayerRef.current = null;
       opportunityLayerRef.current = null;
+      leafletRef.current = null;
     };
   }, [onBoundsChange]);
 
@@ -185,14 +224,15 @@ export function MapPanel({
   }, [mapReady]);
 
   useEffect(() => {
-    if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
+    if (!leafletRef.current || !mapRef.current || !clusterLayerRef.current) return;
 
+    const { circleMarker } = leafletRef.current;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     clusterLayer.clearLayers();
 
     businesses.forEach((business) => {
-      const marker = window.L.circleMarker([business.lat, business.lng], {
+      const marker = circleMarker([business.lat, business.lng], {
         radius: 6,
         color: '#38bdf8',
         fillColor: '#0ea5e9',
@@ -216,7 +256,7 @@ export function MapPanel({
   }, [businesses, showBusinessMarkers]);
 
   useEffect(() => {
-    if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
+    if (!leafletRef.current || !mapRef.current || !clusterLayerRef.current) return;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
@@ -224,7 +264,7 @@ export function MapPanel({
   }, [showBusinessMarkers]);
 
   useEffect(() => {
-    if (!window.L || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;
+    if (!leafletRef.current || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;
 
     const map = mapRef.current;
     const layer = opportunityLayerRef.current;
@@ -234,7 +274,8 @@ export function MapPanel({
     map.addLayer(layer);
 
     const renderOpportunityGrid = () => {
-      if (!mapRef.current || !opportunityLayerRef.current) return;
+      if (!mapRef.current || !opportunityLayerRef.current || !leafletRef.current) return;
+      const { rectangle } = leafletRef.current;
 
       layer.clearLayers();
 
@@ -251,15 +292,6 @@ export function MapPanel({
       const north = bounds.getNorth();
       const west = bounds.getWest();
       const east = bounds.getEast();
-
-      const viewportBusinesses = allBusinesses.filter(
-        (business) =>
-          business.lat >= south && business.lat <= north && business.lng >= west && business.lng <= east
-      );
-      const viewportSelectedBusinesses = businesses.filter(
-        (business) =>
-          business.lat >= south && business.lat <= north && business.lng >= west && business.lng <= east
-      );
 
       const cells: Array<{
         centerLat: number;
@@ -282,24 +314,10 @@ export function MapPanel({
           const cellLat = lat + latStep / 2;
           const cellLng = lng + lngStep / 2;
 
-          const nearbyBusinesses = viewportBusinesses
-            .map((business) => ({
-              business,
-              distance: distanceKm(cellLat, cellLng, business.lat, business.lng)
-            }))
-            .filter((item) => item.distance <= radiusKm)
-            .sort((a, b) => a.distance - b.distance);
-
+          const nearbyBusinesses = nearbyFromBuckets(allBusinessesBuckets, cellLat, cellLng, radiusKm);
           if (nearbyBusinesses.length < MIN_DEMAND_COUNT) continue;
 
-          const nearbyCompetitors = viewportSelectedBusinesses
-            .map((business) => ({
-              business,
-              distance: distanceKm(cellLat, cellLng, business.lat, business.lng)
-            }))
-            .filter((item) => item.distance <= radiusKm)
-            .sort((a, b) => a.distance - b.distance);
-
+          const nearbyCompetitors = nearbyFromBuckets(selectedBusinessesBuckets, cellLat, cellLng, radiusKm);
           const competitorRatings = nearbyCompetitors
             .map((item) => item.business.rating)
             .filter((rating): rating is number => rating !== null);
@@ -374,7 +392,7 @@ export function MapPanel({
                 )
                 .join('<br/>');
 
-        const marker = window.L.rectangle(
+        const marker = rectangle(
           [
             [cell.centerLat - halfLat, cell.centerLng - halfLng],
             [cell.centerLat + halfLat, cell.centerLng + halfLng]
@@ -408,7 +426,7 @@ export function MapPanel({
 
     const scheduleRender = () => {
       if (redrawTimerRef.current) clearTimeout(redrawTimerRef.current);
-      redrawTimerRef.current = setTimeout(renderOpportunityGrid, 300);
+      redrawTimerRef.current = setTimeout(renderOpportunityGrid, 250);
     };
 
     renderOpportunityGrid();
@@ -419,36 +437,16 @@ export function MapPanel({
       if (redrawTimerRef.current) clearTimeout(redrawTimerRef.current);
       map.off('moveend', scheduleRender);
       map.off('zoomend', scheduleRender);
+      layer.clearLayers();
     };
-  }, [allBusinesses, businesses, selectedCategory, opportunityLayerEnabled]);
+  }, [selectedCategory, opportunityLayerEnabled, allBusinessesBuckets, selectedBusinessesBuckets]);
 
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;
-    mapRef.current.flyTo([selectedBusiness.lat, selectedBusiness.lng], 15, { duration: 0.8 });
+    mapRef.current.flyTo([selectedBusiness.lat, selectedBusiness.lng], Math.max(mapRef.current.getZoom(), 14), {
+      duration: 0.6
+    });
   }, [selectedBusiness]);
 
-  return (
-    <div className="relative h-[420px] overflow-hidden rounded-xl border border-slate-800 bg-slate-900 lg:h-[460px]">
-      {OPPORTUNITY_ENABLED ? (
-        <div className="pointer-events-none absolute bottom-3 left-3 z-[1200] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
-          <p className="mb-2 font-semibold">Opportunity Layer</p>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded-sm bg-green-500" />
-              <span>Green → High Opportunity</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded-sm bg-yellow-400" />
-              <span>Yellow → Medium Opportunity</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded-sm bg-red-500" />
-              <span>Red → Saturated / Lower Opportunity</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      <div ref={mapElementRef} className="h-full w-full" />
-    </div>
-  );
+  return <div ref={mapElementRef} className="h-[420px] w-full rounded-xl border border-slate-800 bg-slate-900 lg:h-[460px]" />;
 }
