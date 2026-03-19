@@ -136,7 +136,7 @@ export default function Home() {
   }, [bounds, filters.category, filters.minRating, filters.minReviews]);
 
   return (
-    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3">
+    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
       <section className="space-y-3 lg:col-span-2">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">Business Opportunity Intelligence</h1>

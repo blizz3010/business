@@ -150,6 +150,7 @@ export function MapPanel({
       syncBounds();
       map.on('moveend', syncBounds);
       map.on('zoomend', syncBounds);
+      map.invalidateSize();
       setMapReady(true);
     };
 
@@ -166,6 +167,22 @@ export function MapPanel({
       opportunityLayerRef.current = null;
     };
   }, [onBoundsChange]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !mapElementRef.current) return;
+
+    const map = mapRef.current;
+    const element = mapElementRef.current;
+
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [mapReady]);
 
   useEffect(() => {
     if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
