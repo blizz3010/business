@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
 import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
@@ -10,7 +10,8 @@ const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod
   loading: () => <div className="h-[420px] animate-pulse rounded-xl bg-slate-900 lg:h-[460px]" />
 });
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
@@ -53,6 +54,10 @@ function hasValidBounds(bounds: ViewportBounds | null): bounds is ViewportBounds
   );
 }
 
+function isLocalhostHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
@@ -63,15 +68,25 @@ export default function Home() {
   const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const businessRequestAbortRef = useRef<AbortController | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
+  const isMisconfiguredProdApiBase =
+    typeof window !== 'undefined' && !isLocalhostHost(window.location.hostname) && API_BASE.includes('localhost');
 
   useEffect(() => {
     const fetchStaticData = async () => {
+      if (isMisconfiguredProdApiBase) {
+        setError(
+          'Frontend is using a localhost API URL in production. Set NEXT_PUBLIC_API_BASE_URL (or NEXT_PUBLIC_API_URL) to your deployed backend URL.'
+        );
+        return;
+      }
+
       try {
         const [categoryResponse, opportunityResponse] = await Promise.all([
           fetch(`${API_BASE}/api/categories`),
-          fetch(`${API_BASE}/api/opportunities`)
+          fetch(`${API_BASE}/api/priority-targets`)
         ]);
 
         if (!categoryResponse.ok || !opportunityResponse.ok) {
@@ -83,16 +98,27 @@ export default function Home() {
         setCategories(categoryData);
         setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
       } catch (fetchError) {
-        setError(fetchError instanceof Error ? fetchError.message : 'Unable to load analytics data.');
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Unable to load analytics data. Verify API URL and backend CORS settings.'
+        );
       }
     };
 
     fetchStaticData();
-  }, []);
+  }, [isMisconfiguredProdApiBase]);
 
   useEffect(() => {
     const fetchBusinesses = async () => {
-      if (!bounds) return;
+      if (isMisconfiguredProdApiBase) return;
+      if (!hasValidBounds(bounds)) return;
+
+      if (businessRequestAbortRef.current) {
+        businessRequestAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      businessRequestAbortRef.current = controller;
       setLoading(true);
       setError(null);
 
@@ -105,35 +131,37 @@ export default function Home() {
         });
         if (filters.minRating !== undefined) baseParams.set('minRating', String(filters.minRating));
         if (filters.minReviews !== undefined) baseParams.set('minReviews', String(filters.minReviews));
+        const response = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(await readErrorMessage(response));
+        const rows: Business[] = await response.json();
 
-        const allResponse = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`);
-        if (!allResponse.ok) throw new Error(await readErrorMessage(allResponse));
-        const allRows: Business[] = await allResponse.json();
-
-        let selectedRows: Business[];
-        if (!filters.category) {
-          selectedRows = allRows;
-        } else {
-          const selectedParams = new URLSearchParams(baseParams.toString());
-          selectedParams.set('category', filters.category);
-          const selectedResponse = await fetch(`${API_BASE}/api/businesses?${selectedParams.toString()}`);
-          if (!selectedResponse.ok) throw new Error(await readErrorMessage(selectedResponse));
-          selectedRows = await selectedResponse.json();
-        }
-
-        setAllBusinesses(allRows);
-        setSelectedBusinesses(selectedRows);
+        setAllBusinesses(rows);
+        setSelectedBusinesses(
+          filters.category ? rows.filter((business) => business.normalized_category === filters.category) : rows
+        );
       } catch (fetchError) {
+        if ((fetchError as Error)?.name === 'AbortError') return;
         setAllBusinesses([]);
         setSelectedBusinesses([]);
-        setError(fetchError instanceof Error ? fetchError.message : 'Network error while loading businesses.');
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Network error while loading businesses. Verify API URL and backend CORS settings.'
+        );
       } finally {
-        setLoading(false);
+        if (businessRequestAbortRef.current === controller) {
+          setLoading(false);
+        }
       }
     };
 
     fetchBusinesses();
-  }, [bounds, filters.category, filters.minRating, filters.minReviews]);
+    return () => {
+      if (businessRequestAbortRef.current) {
+        businessRequestAbortRef.current.abort();
+      }
+    };
+  }, [bounds, filters.category, filters.minRating, filters.minReviews, isMisconfiguredProdApiBase]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
