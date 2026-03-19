@@ -33,9 +33,13 @@ analyzeRouter.post('/analyze-tile', async (req, res) => {
 
     if (redis) {
       try {
-        await redis.set(cacheKey, JSON.stringify(analysis), 'EX', 900);
-      } catch (cacheError) {
-        console.warn('Redis cache write failed for analyze-tile:', cacheError.message);
+        await redis.set(cacheKey, JSON.stringify(analysis), { ex: 900 });
+      } catch {
+        try {
+          await redis.set(cacheKey, JSON.stringify(analysis), 'EX', 900);
+        } catch (cacheError) {
+          console.warn('Redis cache write failed for analyze-tile:', cacheError.message);
+        }
       }
     }
 

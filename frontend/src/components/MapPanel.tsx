@@ -136,10 +136,15 @@ export function MapPanel({
   const opportunityLayerRef = useRef<any>(null);
   const leafletRef = useRef<LeafletRuntime | null>(null);
   const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const boundsCallbackRef = useRef(onBoundsChange);
   const [mapReady, setMapReady] = useState(false);
 
   const allBusinessesBuckets = useMemo(() => buildSpatialBuckets(allBusinesses), [allBusinesses]);
   const selectedBusinessesBuckets = useMemo(() => buildSpatialBuckets(businesses), [businesses]);
+
+  useEffect(() => {
+    boundsCallbackRef.current = onBoundsChange;
+  }, [onBoundsChange]);
 
   useEffect(() => {
     let mounted = true;
@@ -172,9 +177,9 @@ export function MapPanel({
       map.addLayer(opportunityLayerRef.current);
 
       const syncBounds = () => {
-        if (!onBoundsChange || !mapRef.current) return;
+        if (!boundsCallbackRef.current || !mapRef.current) return;
         const viewport = mapRef.current.getBounds();
-        onBoundsChange({
+        boundsCallbackRef.current({
           south: viewport.getSouth(),
           north: viewport.getNorth(),
           west: viewport.getWest(),
@@ -202,7 +207,7 @@ export function MapPanel({
       opportunityLayerRef.current = null;
       leafletRef.current = null;
     };
-  }, [onBoundsChange]);
+  }, []);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !mapElementRef.current) return;

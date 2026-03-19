@@ -6,8 +6,24 @@ const CATEGORY_GROUPS = [
   { group: 'Fitness', matches: ['gym', 'fitness'] }
 ];
 
-function toSqlLikeCondition(matchers) {
-  return matchers.map((keyword) => `LOWER(category) LIKE '%${keyword}%'`).join(' OR ');
+function escapeSqlLiteral(value) {
+  return String(value).replaceAll("'", "''");
+}
+
+function assertSafeMatcher(keyword) {
+  if (!/^[a-z0-9_\s-]+$/i.test(keyword)) {
+    throw new Error(`Unsafe category matcher: ${keyword}`);
+  }
+}
+
+function toSqlLikeCondition(matchers, categoryColumn = 'category') {
+  return matchers
+    .map((keyword) => {
+      assertSafeMatcher(keyword);
+      const escapedKeyword = escapeSqlLiteral(keyword.toLowerCase());
+      return `LOWER(${categoryColumn}) LIKE '%${escapedKeyword}%'`;
+    })
+    .join(' OR ');
 }
 
 export function normalizeCategory(rawCategory) {
@@ -21,7 +37,7 @@ export function normalizeCategory(rawCategory) {
 
 export function getCategoryNormalizationSqlExpression(categoryColumn = 'category') {
   const statements = CATEGORY_GROUPS.map(
-    (group) => `WHEN ${toSqlLikeCondition(group.matches).replaceAll('category', categoryColumn)} THEN '${group.group}'`
+    (group) => `WHEN ${toSqlLikeCondition(group.matches, categoryColumn)} THEN '${escapeSqlLiteral(group.group)}'`
   ).join('\n    ');
 
   return `

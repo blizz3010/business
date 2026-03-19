@@ -71,9 +71,9 @@ export async function queryBusinessesInRadius(lat, lng, radiusMeters) {
               )
             ) AS distance_km
      FROM businesses
-     WHERE lat BETWEEN $2 AND $3
-       AND lng BETWEEN $4 AND $5`,
-    [lat, lat - approxDegree, lat + approxDegree, lng - approxDegree, lng + approxDegree]
+     WHERE lat BETWEEN $3 AND $4
+       AND lng BETWEEN $5 AND $6`,
+    [lat, lng, lat - approxDegree, lat + approxDegree, lng - approxDegree, lng + approxDegree]
   );
   return result.rows.filter((row) => Number(row.distance_km) <= radiusKm);
 }

@@ -4,9 +4,12 @@ import { parseNumber, sendServerError, sendValidationError } from '../utils/http
 
 export const businessesRouter = Router();
 
+const DEFAULT_LIMIT = 2000;
+const MAX_LIMIT = 5000;
+
 businessesRouter.get('/businesses', async (req, res) => {
   try {
-    const { minRating, minReviews, category, south, north, west, east } = req.query;
+    const { minRating, minReviews, category, south, north, west, east, limit, offset } = req.query;
 
     const whereClauses = [];
     const params = [];
@@ -60,7 +63,15 @@ businessesRouter.get('/businesses', async (req, res) => {
       )`);
     }
 
+    const parsedLimit = Math.min(Math.max(parseNumber(limit) ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+    const parsedOffset = Math.max(parseNumber(offset) ?? 0, 0);
+
     const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    params.push(parsedLimit);
+    const limitPlaceholder = `$${params.length}`;
+    params.push(parsedOffset);
+    const offsetPlaceholder = `$${params.length}`;
 
     const query = `
       SELECT
@@ -86,6 +97,8 @@ businessesRouter.get('/businesses', async (req, res) => {
       ) enriched
       ${whereSQL}
       ORDER BY review_count DESC
+      LIMIT ${limitPlaceholder}
+      OFFSET ${offsetPlaceholder}
     `;
 
     const result = await pgPool.query(query, params);
@@ -107,6 +120,7 @@ async function fetchPriorityTargets(_req, res) {
       WHERE rating < 3.8
         AND review_count > 100
       ORDER BY review_count DESC
+      LIMIT 1000
     `);
 
     return res.json(result.rows);
