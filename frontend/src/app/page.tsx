@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
-import { Business, BusinessFilters, CategoryInsight, HeatmapPoint } from '@/lib/types';
+import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
 const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
   ssr: false,
@@ -23,7 +23,6 @@ export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [opportunities, setOpportunities] = useState<Business[]>([]);
-  const [heatmap, setHeatmap] = useState<HeatmapPoint[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,23 +33,17 @@ export default function Home() {
   useEffect(() => {
     const fetchStaticData = async () => {
       try {
-        const [heatmapResponse, categoryResponse, opportunityResponse] = await Promise.all([
-          fetch(`${API_BASE}/api/heatmap`),
+        const [categoryResponse, opportunityResponse] = await Promise.all([
           fetch(`${API_BASE}/api/categories`),
           fetch(`${API_BASE}/api/opportunities`)
         ]);
 
-        if (!heatmapResponse.ok || !categoryResponse.ok || !opportunityResponse.ok) {
+        if (!categoryResponse.ok || !opportunityResponse.ok) {
           throw new Error('Failed to load one or more data sources.');
         }
 
-        const [heatmapData, categoryData, opportunityData] = await Promise.all([
-          heatmapResponse.json(),
-          categoryResponse.json(),
-          opportunityResponse.json()
-        ]);
+        const [categoryData, opportunityData] = await Promise.all([categoryResponse.json(), opportunityResponse.json()]);
 
-        setHeatmap(heatmapData);
         setCategories(categoryData);
         setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
       } catch (fetchError) {
@@ -105,7 +98,7 @@ export default function Home() {
           </span>
         </div>
         {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
-        <MapPanel businesses={businesses} heatmap={heatmap} selectedBusiness={selectedBusiness} />
+        <MapPanel businesses={businesses} selectedBusiness={selectedBusiness} />
       </section>
 
       <aside>
