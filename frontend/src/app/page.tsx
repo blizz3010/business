@@ -75,12 +75,6 @@ export default function Home() {
     typeof window !== 'undefined' && !isLocalhostHost(window.location.hostname) && API_BASE.includes('localhost');
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const inProdHost = !isLocalhostHost(window.location.hostname);
-    setIsMisconfiguredProdApiBase(inProdHost && API_BASE.includes('localhost'));
-  }, []);
-
-  useEffect(() => {
     const fetchStaticData = async () => {
       if (isMisconfiguredProdApiBase) {
         setError(
