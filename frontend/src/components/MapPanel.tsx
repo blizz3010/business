@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Business } from '@/lib/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Business, OpportunityCell, getCategoryColor, CATEGORY_COLORS } from '@/lib/types';
 
 const ORLANDO_CENTER: [number, number] = [28.5383, -81.3792];
-const OPPORTUNITY_ENABLED = true;
-const MAX_OPPORTUNITY_CELLS = 40;
-const MIN_DEMAND_COUNT = 4;
-const MIN_OPPORTUNITY_SCORE = 45;
-const SPATIAL_BUCKET_SIZE_KM = 0.6;
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 type Props = {
   businesses: Business[];
@@ -27,9 +25,8 @@ type LeafletRuntime = {
   layerGroup: any;
   rectangle: any;
   circleMarker: any;
+  divIcon: any;
 };
-
-type SpatialEntry = { business: Business; latBucket: number; lngBucket: number };
 
 function escapeHtml(value: string) {
   return value
@@ -40,85 +37,10 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#039;');
 }
 
-function getOpportunityColor(score: number) {
-  if (score >= 67) return '#22c55e';
-  if (score >= 34) return '#facc15';
-  return '#ef4444';
-}
-
-function getCellSizeMeters(zoom: number) {
-  if (zoom <= 10) return 1000;
-  if (zoom <= 12) return 750;
-  return 500;
-}
-
 function getCellStepDegrees(cellSizeMeters: number, latitude: number) {
   const latStep = cellSizeMeters / 111320;
   const lngStep = cellSizeMeters / (111320 * Math.max(Math.cos((latitude * Math.PI) / 180), 0.2));
   return { latStep, lngStep };
-}
-
-function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function buildSpatialBuckets(input: Business[]) {
-  const buckets = new Map<string, SpatialEntry[]>();
-
-  input.forEach((business) => {
-    const latBucket = Math.floor(business.lat / (SPATIAL_BUCKET_SIZE_KM / 111.32));
-    const lngBucket = Math.floor(
-      business.lng / (SPATIAL_BUCKET_SIZE_KM / (111.32 * Math.max(Math.cos((business.lat * Math.PI) / 180), 0.2)))
-    );
-    const key = `${latBucket}:${lngBucket}`;
-    const existing = buckets.get(key);
-    const entry: SpatialEntry = { business, latBucket, lngBucket };
-    if (existing) {
-      existing.push(entry);
-    } else {
-      buckets.set(key, [entry]);
-    }
-  });
-
-  return buckets;
-}
-
-function nearbyFromBuckets(
-  buckets: Map<string, SpatialEntry[]>,
-  centerLat: number,
-  centerLng: number,
-  radiusKm: number
-): Array<{ business: Business; distance: number }> {
-  const latBucket = Math.floor(centerLat / (SPATIAL_BUCKET_SIZE_KM / 111.32));
-  const lngBucket = Math.floor(
-    centerLng / (SPATIAL_BUCKET_SIZE_KM / (111.32 * Math.max(Math.cos((centerLat * Math.PI) / 180), 0.2)))
-  );
-  const nearby: Array<{ business: Business; distance: number }> = [];
-
-  for (let latOffset = -2; latOffset <= 2; latOffset += 1) {
-    for (let lngOffset = -2; lngOffset <= 2; lngOffset += 1) {
-      const key = `${latBucket + latOffset}:${lngBucket + lngOffset}`;
-      const entries = buckets.get(key);
-      if (!entries?.length) continue;
-
-      entries.forEach(({ business }) => {
-        const distance = distanceKm(centerLat, centerLng, business.lat, business.lng);
-        if (distance <= radiusKm) {
-          nearby.push({ business, distance });
-        }
-      });
-    }
-  }
-
-  nearby.sort((a, b) => a.distance - b.distance);
-  return nearby;
 }
 
 export function MapPanel({
@@ -134,25 +56,27 @@ export function MapPanel({
   const mapRef = useRef<any>(null);
   const clusterLayerRef = useRef<any>(null);
   const opportunityLayerRef = useRef<any>(null);
+  const legendControlRef = useRef<any>(null);
   const leafletRef = useRef<LeafletRuntime | null>(null);
+  const opportunityAbortRef = useRef<AbortController | null>(null);
   const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const boundsCallbackRef = useRef(onBoundsChange);
   const [mapReady, setMapReady] = useState(false);
 
-  const allBusinessesBuckets = useMemo(() => buildSpatialBuckets(allBusinesses), [allBusinesses]);
-  const selectedBusinessesBuckets = useMemo(() => buildSpatialBuckets(businesses), [businesses]);
+  // Keep the callback ref updated without re-initializing the map
+  boundsCallbackRef.current = onBoundsChange;
 
-  useEffect(() => {
-    boundsCallbackRef.current = onBoundsChange;
-  }, [onBoundsChange]);
-
+  // ── Map initialization ─────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
       if (!mapElementRef.current) return;
 
-      const [leafletModule] = await Promise.all([import('leaflet'), import('leaflet.markercluster')]);
+      const [leafletModule] = await Promise.all([
+        import('leaflet'),
+        import('leaflet.markercluster')
+      ]);
       const L = leafletModule.default;
       if (!mounted || !L || mapRef.current) return;
 
@@ -162,7 +86,8 @@ export function MapPanel({
         markerClusterGroup: L.markerClusterGroup,
         layerGroup: L.layerGroup,
         rectangle: L.rectangle,
-        circleMarker: L.circleMarker
+        circleMarker: L.circleMarker,
+        divIcon: L.divIcon
       };
 
       const map = L.map(mapElementRef.current).setView(ORLANDO_CENTER, 11);
@@ -207,37 +132,32 @@ export function MapPanel({
       opportunityLayerRef.current = null;
       leafletRef.current = null;
     };
-  }, []);
+  }, []); // stable — no deps that change
 
+  // ── Resize observer ────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapRef.current || !mapElementRef.current) return;
-
     const map = mapRef.current;
     const element = mapElementRef.current;
-
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
     resizeObserver.observe(element);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
+    return () => resizeObserver.disconnect();
   }, [mapReady]);
 
+  // ── Business markers ───────────────────────────────────────────────────
   useEffect(() => {
     if (!leafletRef.current || !mapRef.current || !clusterLayerRef.current) return;
-
     const { circleMarker } = leafletRef.current;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     clusterLayer.clearLayers();
 
     businesses.forEach((business) => {
+      const catColor = getCategoryColor(business.normalized_category);
       const marker = circleMarker([business.lat, business.lng], {
         radius: 6,
-        color: '#38bdf8',
-        fillColor: '#0ea5e9',
+        color: catColor.stroke,
+        fillColor: catColor.fill,
         fillOpacity: 0.85,
         weight: 1
       });
@@ -257,6 +177,7 @@ export function MapPanel({
     if (businesses.length > 0 && showBusinessMarkers) map.addLayer(clusterLayer);
   }, [businesses, showBusinessMarkers]);
 
+  // ── Toggle business marker visibility ──────────────────────────────────
   useEffect(() => {
     if (!leafletRef.current || !mapRef.current || !clusterLayerRef.current) return;
     const map = mapRef.current;
@@ -265,173 +186,156 @@ export function MapPanel({
     if (showBusinessMarkers) map.addLayer(clusterLayer);
   }, [showBusinessMarkers]);
 
+  // ── Opportunity grid layer (fetches from backend) ──────────────────────
+  const fetchAndRenderOpportunities = useCallback(async () => {
+    if (!leafletRef.current || !mapRef.current || !opportunityLayerRef.current) return;
+    if (!opportunityLayerEnabled) return;
+
+    const map = mapRef.current;
+    const layer = opportunityLayerRef.current;
+    const { rectangle } = leafletRef.current;
+
+    // Abort any in-flight request
+    if (opportunityAbortRef.current) opportunityAbortRef.current.abort();
+    const controller = new AbortController();
+    opportunityAbortRef.current = controller;
+
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+
+    // Adaptive cell size based on zoom
+    let cellSize = 500;
+    if (zoom <= 10) cellSize = 1000;
+    else if (zoom <= 12) cellSize = 750;
+
+    // Adaptive radius
+    let radius = 800;
+    if (zoom >= 14) radius = 500;
+    else if (zoom <= 10) radius = 1200;
+
+    const params = new URLSearchParams({
+      south: String(bounds.getSouth()),
+      north: String(bounds.getNorth()),
+      west: String(bounds.getWest()),
+      east: String(bounds.getEast()),
+      cellSize: String(cellSize),
+      radius: String(radius),
+      limit: '80'
+    });
+
+    if (selectedCategory) {
+      params.set('category', selectedCategory);
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/opportunity-grid?${params}`, {
+        signal: controller.signal
+      });
+
+      if (!response.ok) return;
+      const cells: OpportunityCell[] = await response.json();
+
+      if (controller.signal.aborted) return;
+
+      layer.clearLayers();
+
+      const centerLat = (bounds.getSouth() + bounds.getNorth()) / 2;
+      const { latStep, lngStep } = getCellStepDegrees(cellSize, centerLat);
+      const halfLat = latStep * 0.42;
+      const halfLng = lngStep * 0.42;
+
+      for (const cell of cells) {
+        const catColor = getCategoryColor(cell.category);
+
+        const rect = rectangle(
+          [
+            [cell.lat - halfLat, cell.lng - halfLng],
+            [cell.lat + halfLat, cell.lng + halfLng]
+          ],
+          {
+            color: catColor.stroke,
+            fillColor: catColor.fill,
+            fillOpacity: Math.min(0.15 + (cell.score / 100) * 0.35, 0.50),
+            weight: 1.5
+          }
+        );
+
+        // Build popup with score breakdown and competitor list
+        const competitorHtml = cell.top_competitors.length === 0
+          ? '<em>No competitors in this category nearby</em>'
+          : cell.top_competitors
+              .map(
+                (c) =>
+                  `• ${escapeHtml(c.name)} — ★${c.rating ?? 'N/A'} (${c.review_count} reviews) · ${(c.distance_km * 1000).toFixed(0)}m`
+              )
+              .join('<br/>');
+
+        const scoreBarHtml = (label: string, value: number, color: string) =>
+          `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
+            <span style="width:70px;font-size:10px;color:#94a3b8;">${label}</span>
+            <div style="flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;">
+              <div style="width:${value}%;height:100%;background:${color};border-radius:3px;"></div>
+            </div>
+            <span style="width:24px;text-align:right;font-size:10px;color:#94a3b8;">${value}</span>
+          </div>`;
+
+        rect.bindPopup(`
+          <div style="font-size:12px;line-height:1.5;max-width:300px;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span style="width:10px;height:10px;border-radius:2px;background:${catColor.fill};border:1px solid ${catColor.stroke};display:inline-block;"></span>
+              <strong>${escapeHtml(cell.category)} opportunity</strong>
+              <span style="margin-left:auto;font-weight:bold;font-size:14px;">${cell.score}</span>
+            </div>
+
+            ${scoreBarHtml('Demand', cell.demand_score, '#38bdf8')}
+            ${scoreBarHtml('Scarcity', cell.scarcity_score, '#22c55e')}
+            ${scoreBarHtml('Quality gap', cell.quality_gap_score, '#facc15')}
+
+            <div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;">
+              <strong>Nearby businesses:</strong> ${cell.total_nearby}<br/>
+              <strong>${escapeHtml(cell.category)} competitors:</strong> ${cell.competitor_count}<br/>
+              ${cell.avg_competitor_rating !== null ? `<strong>Avg competitor rating:</strong> ${cell.avg_competitor_rating.toFixed(1)}★<br/>` : ''}
+            </div>
+
+            <div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;">
+              <strong>Nearest ${escapeHtml(cell.category)} competitors</strong><br/>
+              ${competitorHtml}
+            </div>
+          </div>
+        `);
+
+        layer.addLayer(rect);
+      }
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return;
+      console.warn('Opportunity grid fetch failed:', err);
+    }
+  }, [opportunityLayerEnabled, selectedCategory]);
+
+  // Wire up opportunity layer toggling and re-fetching on map movement
   useEffect(() => {
-    if (!leafletRef.current || !mapRef.current || !opportunityLayerRef.current || !OPPORTUNITY_ENABLED) return;
+    if (!mapRef.current || !opportunityLayerRef.current) return;
 
     const map = mapRef.current;
     const layer = opportunityLayerRef.current;
 
     if (map.hasLayer(layer)) map.removeLayer(layer);
-    if (!opportunityLayerEnabled) return;
-    map.addLayer(layer);
 
-    const renderOpportunityGrid = () => {
-      if (!mapRef.current || !opportunityLayerRef.current || !leafletRef.current) return;
-      const { rectangle } = leafletRef.current;
-
+    if (!opportunityLayerEnabled) {
       layer.clearLayers();
+      return;
+    }
 
-      const bounds = map.getBounds();
-      const zoom = map.getZoom();
-      const cellSizeMeters = getCellSizeMeters(zoom);
-      const centerLat = bounds.getCenter().lat;
-      const { latStep, lngStep } = getCellStepDegrees(cellSizeMeters, centerLat);
-      const halfLat = latStep * 0.35;
-      const halfLng = lngStep * 0.35;
-      const radiusKm = zoom >= 14 ? 0.9 : zoom >= 12 ? 1.2 : 1.8;
-
-      const south = bounds.getSouth();
-      const north = bounds.getNorth();
-      const west = bounds.getWest();
-      const east = bounds.getEast();
-
-      const cells: Array<{
-        centerLat: number;
-        centerLng: number;
-        nearbyAllCount: number;
-        nearbySelectedCount: number;
-        avgCompetitorRating: number | null;
-        avgCompetitorReviews: number | null;
-        opportunityScore: number;
-        nearbyBusinesses: Array<{ business: Business; distance: number }>;
-        nearbyCompetitors: Array<{ business: Business; distance: number }>;
-      }> = [];
-
-      let maxDemandCount = 0;
-      let maxSelectedCount = 0;
-      let maxCompetitorReviews = 0;
-
-      for (let lat = south; lat < north; lat += latStep) {
-        for (let lng = west; lng < east; lng += lngStep) {
-          const cellLat = lat + latStep / 2;
-          const cellLng = lng + lngStep / 2;
-
-          const nearbyBusinesses = nearbyFromBuckets(allBusinessesBuckets, cellLat, cellLng, radiusKm);
-          if (nearbyBusinesses.length < MIN_DEMAND_COUNT) continue;
-
-          const nearbyCompetitors = nearbyFromBuckets(selectedBusinessesBuckets, cellLat, cellLng, radiusKm);
-          const competitorRatings = nearbyCompetitors
-            .map((item) => item.business.rating)
-            .filter((rating): rating is number => rating !== null);
-          const competitorReviews = nearbyCompetitors.map((item) => item.business.review_count ?? 0);
-          const avgCompetitorRating =
-            competitorRatings.length > 0
-              ? competitorRatings.reduce((acc, rating) => acc + rating, 0) / competitorRatings.length
-              : null;
-          const avgCompetitorReviews =
-            competitorReviews.length > 0
-              ? competitorReviews.reduce((acc, count) => acc + count, 0) / competitorReviews.length
-              : null;
-
-          maxDemandCount = Math.max(maxDemandCount, nearbyBusinesses.length);
-          maxSelectedCount = Math.max(maxSelectedCount, nearbyCompetitors.length);
-          maxCompetitorReviews = Math.max(maxCompetitorReviews, avgCompetitorReviews ?? 0);
-
-          cells.push({
-            centerLat: cellLat,
-            centerLng: cellLng,
-            nearbyAllCount: nearbyBusinesses.length,
-            nearbySelectedCount: nearbyCompetitors.length,
-            avgCompetitorRating,
-            avgCompetitorReviews,
-            opportunityScore: 0,
-            nearbyBusinesses,
-            nearbyCompetitors
-          });
-        }
-      }
-
-      for (const cell of cells) {
-        const demandScore = maxDemandCount === 0 ? 0 : cell.nearbyAllCount / maxDemandCount;
-        const scarcityScore = maxSelectedCount === 0 ? 1 : 1 - cell.nearbySelectedCount / maxSelectedCount;
-        const normalizedRating =
-          cell.avgCompetitorRating === null ? 0 : Math.min(Math.max(cell.avgCompetitorRating / 5, 0), 1);
-        const normalizedReviews =
-          cell.avgCompetitorReviews === null || maxCompetitorReviews === 0
-            ? 0
-            : Math.log1p(cell.avgCompetitorReviews) / Math.log1p(maxCompetitorReviews);
-        const competitorStrength = 0.7 * normalizedRating + 0.3 * normalizedReviews;
-        const qualityGapScore = 1 - competitorStrength;
-
-        cell.opportunityScore = Math.round((0.4 * demandScore + 0.35 * scarcityScore + 0.25 * qualityGapScore) * 100);
-      }
-
-      const renderableCells = cells
-        .filter((cell) => cell.opportunityScore >= MIN_OPPORTUNITY_SCORE)
-        .sort((a, b) => b.opportunityScore - a.opportunityScore)
-        .slice(0, MAX_OPPORTUNITY_CELLS);
-
-      for (const cell of renderableCells) {
-        const nearbyBusinessListHtml =
-          cell.nearbyBusinesses.length === 0
-            ? '<em>No nearby businesses in radius</em>'
-            : cell.nearbyBusinesses
-                .slice(0, 8)
-                .map(
-                  ({ business, distance }) =>
-                    `• ${escapeHtml(business.name)} (${escapeHtml(business.normalized_category)}) - ${distance.toFixed(2)}km`
-                )
-                .join('<br/>');
-
-        const nearbyCompetitorListHtml =
-          cell.nearbyCompetitors.length === 0
-            ? '<em>No nearby selected-category competitors</em>'
-            : cell.nearbyCompetitors
-                .slice(0, 8)
-                .map(
-                  ({ business, distance }) =>
-                    `• ${escapeHtml(business.name)} (${escapeHtml(business.normalized_category)}) - ${distance.toFixed(2)}km`
-                )
-                .join('<br/>');
-
-        const marker = rectangle(
-          [
-            [cell.centerLat - halfLat, cell.centerLng - halfLng],
-            [cell.centerLat + halfLat, cell.centerLng + halfLng]
-          ],
-          {
-            color: getOpportunityColor(cell.opportunityScore),
-            fillColor: getOpportunityColor(cell.opportunityScore),
-            fillOpacity: 0.28,
-            weight: 1
-          }
-        );
-
-        marker.bindPopup(`
-          <div style="font-size:12px;line-height:1.4;max-width:300px;">
-            <strong>Opportunity Cell</strong><br/>
-            Opportunity Score: <strong>${cell.opportunityScore}</strong><br/>
-            Selected Category: <strong>${escapeHtml(selectedCategory ?? 'All categories')}</strong><br/>
-            Nearby all-business count: <strong>${cell.nearbyAllCount}</strong><br/>
-            Nearby selected-category count: <strong>${cell.nearbySelectedCount}</strong><br/>
-            Avg nearby competitor rating: <strong>${cell.avgCompetitorRating?.toFixed(2) ?? 'N/A'}</strong><br/>
-            Avg nearby competitor reviews: <strong>${cell.avgCompetitorReviews?.toFixed(0) ?? 'N/A'}</strong><br/>
-            <br/>
-            <strong>Nearby Businesses</strong><br/>${nearbyBusinessListHtml}<br/><br/>
-            <strong>Nearby Competitors</strong><br/>${nearbyCompetitorListHtml}
-          </div>
-        `);
-
-        layer.addLayer(marker);
-      }
-    };
+    map.addLayer(layer);
 
     const scheduleRender = () => {
       if (redrawTimerRef.current) clearTimeout(redrawTimerRef.current);
-      redrawTimerRef.current = setTimeout(renderOpportunityGrid, 250);
+      redrawTimerRef.current = setTimeout(fetchAndRenderOpportunities, 350);
     };
 
-    renderOpportunityGrid();
+    // Initial render
+    fetchAndRenderOpportunities();
+
     map.on('moveend', scheduleRender);
     map.on('zoomend', scheduleRender);
 
@@ -439,16 +343,80 @@ export function MapPanel({
       if (redrawTimerRef.current) clearTimeout(redrawTimerRef.current);
       map.off('moveend', scheduleRender);
       map.off('zoomend', scheduleRender);
+      if (opportunityAbortRef.current) opportunityAbortRef.current.abort();
       layer.clearLayers();
     };
-  }, [selectedCategory, opportunityLayerEnabled, allBusinessesBuckets, selectedBusinessesBuckets]);
+  }, [opportunityLayerEnabled, selectedCategory, fetchAndRenderOpportunities]);
 
+  // ── Fly to selected business ───────────────────────────────────────────
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;
-    mapRef.current.flyTo([selectedBusiness.lat, selectedBusiness.lng], Math.max(mapRef.current.getZoom(), 14), {
-      duration: 0.6
-    });
+    mapRef.current.flyTo(
+      [selectedBusiness.lat, selectedBusiness.lng],
+      Math.max(mapRef.current.getZoom(), 14),
+      { duration: 0.6 }
+    );
   }, [selectedBusiness]);
 
-  return <div ref={mapElementRef} className="h-[420px] w-full rounded-xl border border-slate-800 bg-slate-900 lg:h-[460px]" />;
+  // ── Category legend overlay ────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !opportunityLayerEnabled) {
+      if (legendControlRef.current && mapRef.current) {
+        mapRef.current.removeControl(legendControlRef.current);
+        legendControlRef.current = null;
+      }
+      return;
+    }
+
+    // Don't re-create if already present
+    if (legendControlRef.current) {
+      mapRef.current.removeControl(legendControlRef.current);
+      legendControlRef.current = null;
+    }
+
+    const L = (window as any).L;
+    if (!L) return;
+
+    const legend = (L.control as any)({ position: 'bottomright' });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create('div', 'leaflet-control');
+      div.style.cssText =
+        'background:rgba(15,23,42,0.92);padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.6;color:#cbd5e1;pointer-events:auto;';
+
+      const entries = selectedCategory
+        ? [[selectedCategory, CATEGORY_COLORS[selectedCategory] ?? CATEGORY_COLORS['Services']]]
+        : Object.entries(CATEGORY_COLORS);
+
+      div.innerHTML =
+        '<div style="font-weight:600;margin-bottom:4px;color:#e2e8f0;">Opportunity categories</div>' +
+        (entries as [string, { fill: string; stroke: string }][])
+          .map(
+            ([name, c]) =>
+              `<div style="display:flex;align-items:center;gap:5px;">
+                <span style="width:10px;height:10px;border-radius:2px;background:${c.fill};border:1px solid ${c.stroke};display:inline-block;"></span>
+                ${name}
+              </div>`
+          )
+          .join('');
+
+      return div;
+    };
+
+    legend.addTo(mapRef.current);
+    legendControlRef.current = legend;
+
+    return () => {
+      if (legendControlRef.current && mapRef.current) {
+        mapRef.current.removeControl(legendControlRef.current);
+        legendControlRef.current = null;
+      }
+    };
+  }, [mapReady, opportunityLayerEnabled, selectedCategory]);
+
+  return (
+    <div
+      ref={mapElementRef}
+      className="h-[420px] w-full rounded-xl border border-slate-800 bg-slate-900 lg:h-[460px]"
+    />
+  );
 }
