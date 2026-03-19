@@ -54,6 +54,10 @@ function hasValidBounds(bounds: ViewportBounds | null): bounds is ViewportBounds
   );
 }
 
+function isLocalhostHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
@@ -67,6 +71,12 @@ export default function Home() {
   const businessRequestAbortRef = useRef<AbortController | null>(null);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const inProdHost = !isLocalhostHost(window.location.hostname);
+    setIsMisconfiguredProdApiBase(inProdHost && API_BASE.includes('localhost'));
+  }, []);
 
   useEffect(() => {
     const fetchStaticData = async () => {
