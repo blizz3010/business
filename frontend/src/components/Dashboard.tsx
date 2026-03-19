@@ -90,7 +90,7 @@ export function Dashboard({
               checked={filters.showBusinessMarkers}
               onChange={(event) => onFilterChange({ ...filters, showBusinessMarkers: event.target.checked })}
             />
-            Hide Business Markers
+            Show Business Markers
           </label>
         </div>
       </section>
