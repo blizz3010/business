@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Business } from '@/lib/types';
 
 declare global {
@@ -12,14 +12,27 @@ declare global {
 const ORLANDO_CENTER: [number, number] = [28.5383, -81.3792];
 const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+const MARKER_CLUSTER_JS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
+const MARKER_CLUSTER_CSS = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
+const MARKER_CLUSTER_DEFAULT_CSS =
+  'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
+
+const MAX_OPPORTUNITY_CELLS = 40;
+const MIN_DEMAND_COUNT = 4;
+const MIN_OPPORTUNITY_SCORE = 45;
 
 type Props = {
   businesses: Business[];
+  allBusinesses: Business[];
+  selectedCategory?: string;
+  opportunitiesOnly: boolean;
+  opportunityLayerEnabled: boolean;
   selectedBusiness?: Business | null;
+  onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
 
 function loadStyle(href: string) {
-  if (document.querySelector(`link[href=\"${href}\"]`)) return;
+  if (document.querySelector(`link[href="${href}"]`)) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet';
   link.href = href;
@@ -28,7 +41,7 @@ function loadStyle(href: string) {
 
 function loadScript(src: string) {
   return new Promise<void>((resolve, reject) => {
-    if (document.querySelector(`script[src=\"${src}\"]`)) {
+    if (document.querySelector(`script[src="${src}"]`)) {
       resolve();
       return;
     }
@@ -41,7 +54,6 @@ function loadScript(src: string) {
     document.head.appendChild(script);
   });
 }
-
 
 function escapeHtml(value: string) {
   return value
@@ -81,11 +93,21 @@ function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function MapPanel({ businesses, selectedBusiness }: Props) {
+export function MapPanel({
+  businesses,
+  allBusinesses,
+  selectedCategory,
+  opportunitiesOnly,
+  opportunityLayerEnabled,
+  onBoundsChange,
+  selectedBusiness
+}: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const clusterLayerRef = useRef<any>(null);
   const opportunityLayerRef = useRef<any>(null);
   const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -94,7 +116,10 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
       if (!mapElementRef.current) return;
 
       loadStyle(LEAFLET_CSS);
+      loadStyle(MARKER_CLUSTER_CSS);
+      loadStyle(MARKER_CLUSTER_DEFAULT_CSS);
       await loadScript(LEAFLET_JS);
+      await loadScript(MARKER_CLUSTER_JS);
 
       if (!mounted || !window.L || mapRef.current) return;
 
@@ -104,8 +129,14 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
       }).addTo(map);
 
       mapRef.current = map;
+      clusterLayerRef.current = window.L.markerClusterGroup({
+        showCoverageOnHover: false,
+        maxClusterRadius: 45
+      });
       opportunityLayerRef.current = window.L.layerGroup();
+      map.addLayer(clusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
+      setMapReady(true);
     };
 
     init();
@@ -116,10 +147,53 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
   }, []);
 
   useEffect(() => {
+    if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
+
+    const map = mapRef.current;
+    const clusterLayer = clusterLayerRef.current;
+    clusterLayer.clearLayers();
+
+    businesses.forEach((business) => {
+      const marker = window.L.circleMarker([business.lat, business.lng], {
+        radius: 6,
+        color: '#38bdf8',
+        fillColor: '#0ea5e9',
+        fillOpacity: 0.85,
+        weight: 1
+      });
+
+      marker.bindPopup(`
+        <div style="font-size:12px;line-height:1.4;max-width:280px;">
+          <strong>${escapeHtml(business.name)}</strong><br/>
+          Category: <strong>${escapeHtml(business.normalized_category)}</strong><br/>
+          Rating: <strong>${business.rating ?? 'N/A'}</strong><br/>
+          Reviews: <strong>${business.review_count}</strong>
+        </div>
+      `);
+      clusterLayer.addLayer(marker);
+    });
+
+    if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
+    if (businesses.length > 0 && !opportunitiesOnly) map.addLayer(clusterLayer);
+  }, [businesses, opportunitiesOnly]);
+
+  useEffect(() => {
+    if (!window.L || !mapRef.current || !clusterLayerRef.current) return;
+    const map = mapRef.current;
+    const clusterLayer = clusterLayerRef.current;
+    if (map.hasLayer(clusterLayer)) map.removeLayer(clusterLayer);
+    if (!opportunitiesOnly) map.addLayer(clusterLayer);
+  }, [opportunitiesOnly]);
+
+  useEffect(() => {
     if (!window.L || !mapRef.current || !opportunityLayerRef.current) return;
 
     const map = mapRef.current;
     const layer = opportunityLayerRef.current;
+
+    if (map.hasLayer(layer)) map.removeLayer(layer);
+    if (!opportunityLayerEnabled) return;
+    map.addLayer(layer);
 
     const renderOpportunityGrid = () => {
       if (!mapRef.current || !opportunityLayerRef.current) return;
@@ -131,14 +205,20 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
       const cellSizeMeters = getCellSizeMeters(zoom);
       const centerLat = bounds.getCenter().lat;
       const { latStep, lngStep } = getCellStepDegrees(cellSizeMeters, centerLat);
-      const markerRadius = Math.max(7, Math.min(16, Math.round(zoom * 0.9)));
+      const halfLat = latStep * 0.35;
+      const halfLng = lngStep * 0.35;
+      const radiusKm = zoom >= 14 ? 0.9 : zoom >= 12 ? 1.2 : 1.8;
 
       const south = bounds.getSouth();
       const north = bounds.getNorth();
       const west = bounds.getWest();
       const east = bounds.getEast();
 
-      const viewportBusinesses = businesses.filter(
+      const viewportBusinesses = allBusinesses.filter(
+        (business) =>
+          business.lat >= south && business.lat <= north && business.lng >= west && business.lng <= east
+      );
+      const viewportSelectedBusinesses = businesses.filter(
         (business) =>
           business.lat >= south && business.lat <= north && business.lng >= west && business.lng <= east
       );
@@ -146,85 +226,141 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
       const cells: Array<{
         centerLat: number;
         centerLng: number;
-        businesses: Business[];
-        dominantCategory: string;
+        nearbyAllCount: number;
+        nearbySelectedCount: number;
+        avgCompetitorRating: number | null;
+        avgCompetitorReviews: number | null;
         opportunityScore: number;
+        nearbyBusinesses: Array<{ business: Business; distance: number }>;
+        nearbyCompetitors: Array<{ business: Business; distance: number }>;
       }> = [];
 
-      let maxDensity = 0;
+      let maxDemandCount = 0;
+      let maxSelectedCount = 0;
+      let maxCompetitorReviews = 0;
 
       for (let lat = south; lat < north; lat += latStep) {
         for (let lng = west; lng < east; lng += lngStep) {
-          const cellBusinesses = viewportBusinesses.filter(
-            (business) =>
-              business.lat >= lat &&
-              business.lat < lat + latStep &&
-              business.lng >= lng &&
-              business.lng < lng + lngStep
-          );
+          const cellLat = lat + latStep / 2;
+          const cellLng = lng + lngStep / 2;
 
-          maxDensity = Math.max(maxDensity, cellBusinesses.length);
-          const categoryCounter = new Map<string, number>();
-          for (const business of cellBusinesses) {
-            categoryCounter.set(business.normalized_category, (categoryCounter.get(business.normalized_category) ?? 0) + 1);
-          }
+          const nearbyBusinesses = viewportBusinesses
+            .map((business) => ({
+              business,
+              distance: distanceKm(cellLat, cellLng, business.lat, business.lng)
+            }))
+            .filter((item) => item.distance <= radiusKm)
+            .sort((a, b) => a.distance - b.distance);
 
-          let dominantCategory = 'No dominant category';
-          let dominantCount = 0;
-          categoryCounter.forEach((count, category) => {
-            if (count > dominantCount) {
-              dominantCount = count;
-              dominantCategory = category;
-            }
-          });
+          if (nearbyBusinesses.length < MIN_DEMAND_COUNT) continue;
+
+          const nearbyCompetitors = viewportSelectedBusinesses
+            .map((business) => ({
+              business,
+              distance: distanceKm(cellLat, cellLng, business.lat, business.lng)
+            }))
+            .filter((item) => item.distance <= radiusKm)
+            .sort((a, b) => a.distance - b.distance);
+
+          const competitorRatings = nearbyCompetitors
+            .map((item) => item.business.rating)
+            .filter((rating): rating is number => rating !== null);
+          const competitorReviews = nearbyCompetitors.map((item) => item.business.review_count ?? 0);
+          const avgCompetitorRating =
+            competitorRatings.length > 0
+              ? competitorRatings.reduce((acc, rating) => acc + rating, 0) / competitorRatings.length
+              : null;
+          const avgCompetitorReviews =
+            competitorReviews.length > 0
+              ? competitorReviews.reduce((acc, count) => acc + count, 0) / competitorReviews.length
+              : null;
+
+          maxDemandCount = Math.max(maxDemandCount, nearbyBusinesses.length);
+          maxSelectedCount = Math.max(maxSelectedCount, nearbyCompetitors.length);
+          maxCompetitorReviews = Math.max(maxCompetitorReviews, avgCompetitorReviews ?? 0);
 
           cells.push({
-            centerLat: lat + latStep / 2,
-            centerLng: lng + lngStep / 2,
-            businesses: cellBusinesses,
-            dominantCategory,
-            opportunityScore: 100
+            centerLat: cellLat,
+            centerLng: cellLng,
+            nearbyAllCount: nearbyBusinesses.length,
+            nearbySelectedCount: nearbyCompetitors.length,
+            avgCompetitorRating,
+            avgCompetitorReviews,
+            opportunityScore: 0,
+            nearbyBusinesses,
+            nearbyCompetitors
           });
         }
       }
 
       for (const cell of cells) {
-        const density = cell.businesses.length;
-        cell.opportunityScore = maxDensity === 0 ? 100 : Math.round((1 - density / maxDensity) * 100);
-        const nearbyBusinesses = viewportBusinesses
-          .map((business) => ({
-            business,
-            distance: distanceKm(cell.centerLat, cell.centerLng, business.lat, business.lng)
-          }))
-          .filter((item) => item.distance <= 1)
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 8);
+        const demandScore = maxDemandCount === 0 ? 0 : cell.nearbyAllCount / maxDemandCount;
+        const scarcityScore = maxSelectedCount === 0 ? 1 : 1 - cell.nearbySelectedCount / maxSelectedCount;
+        const normalizedRating =
+          cell.avgCompetitorRating === null ? 0 : Math.min(Math.max(cell.avgCompetitorRating / 5, 0), 1);
+        const normalizedReviews =
+          cell.avgCompetitorReviews === null || maxCompetitorReviews === 0
+            ? 0
+            : Math.log1p(cell.avgCompetitorReviews) / Math.log1p(maxCompetitorReviews);
+        const competitorStrength = 0.7 * normalizedRating + 0.3 * normalizedReviews;
+        const qualityGapScore = 1 - competitorStrength;
 
-        const nearbyListHtml =
-          nearbyBusinesses.length === 0
-            ? '<em>No nearby businesses within 1km</em>'
-            : nearbyBusinesses
+        cell.opportunityScore = Math.round((0.45 * demandScore + 0.35 * scarcityScore + 0.2 * qualityGapScore) * 100);
+      }
+
+      const renderableCells = cells
+        .filter((cell) => cell.opportunityScore >= MIN_OPPORTUNITY_SCORE)
+        .sort((a, b) => b.opportunityScore - a.opportunityScore)
+        .slice(0, MAX_OPPORTUNITY_CELLS);
+
+      for (const cell of renderableCells) {
+        const nearbyBusinessListHtml =
+          cell.nearbyBusinesses.length === 0
+            ? '<em>No nearby businesses in radius</em>'
+            : cell.nearbyBusinesses
+                .slice(0, 8)
                 .map(
                   ({ business, distance }) =>
                     `• ${escapeHtml(business.name)} (${escapeHtml(business.normalized_category)}) - ${distance.toFixed(2)}km`
                 )
                 .join('<br/>');
 
-        const marker = window.L.circleMarker([cell.centerLat, cell.centerLng], {
-          radius: markerRadius,
-          color: getOpportunityColor(cell.opportunityScore),
-          fillColor: getOpportunityColor(cell.opportunityScore),
-          fillOpacity: 0.4,
-          weight: 1
-        });
+        const nearbyCompetitorListHtml =
+          cell.nearbyCompetitors.length === 0
+            ? '<em>No nearby selected-category competitors</em>'
+            : cell.nearbyCompetitors
+                .slice(0, 8)
+                .map(
+                  ({ business, distance }) =>
+                    `• ${escapeHtml(business.name)} (${escapeHtml(business.normalized_category)}) - ${distance.toFixed(2)}km`
+                )
+                .join('<br/>');
+
+        const marker = window.L.rectangle(
+          [
+            [cell.centerLat - halfLat, cell.centerLng - halfLng],
+            [cell.centerLat + halfLat, cell.centerLng + halfLng]
+          ],
+          {
+            color: getOpportunityColor(cell.opportunityScore),
+            fillColor: getOpportunityColor(cell.opportunityScore),
+            fillOpacity: 0.28,
+            weight: 1
+          }
+        );
 
         marker.bindPopup(`
-          <div style="font-size:12px;line-height:1.4;max-width:280px;">
+          <div style="font-size:12px;line-height:1.4;max-width:300px;">
             <strong>Opportunity Cell</strong><br/>
-            Businesses: <strong>${cell.businesses.length}</strong><br/>
-            Category: <strong>${escapeHtml(cell.dominantCategory)}</strong><br/>
             Opportunity Score: <strong>${cell.opportunityScore}</strong><br/>
-            Nearby Businesses:<br/>${nearbyListHtml}
+            Selected Category: <strong>${escapeHtml(selectedCategory ?? 'All categories')}</strong><br/>
+            Nearby all-business count: <strong>${cell.nearbyAllCount}</strong><br/>
+            Nearby selected-category count: <strong>${cell.nearbySelectedCount}</strong><br/>
+            Avg nearby competitor rating: <strong>${cell.avgCompetitorRating?.toFixed(2) ?? 'N/A'}</strong><br/>
+            Avg nearby competitor reviews: <strong>${cell.avgCompetitorReviews?.toFixed(0) ?? 'N/A'}</strong><br/>
+            <br/>
+            <strong>Nearby Businesses</strong><br/>${nearbyBusinessListHtml}<br/><br/>
+            <strong>Nearby Competitors</strong><br/>${nearbyCompetitorListHtml}
           </div>
         `);
 
@@ -246,7 +382,31 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
       map.off('moveend', scheduleRender);
       map.off('zoomend', scheduleRender);
     };
-  }, [businesses]);
+  }, [allBusinesses, businesses, selectedCategory, opportunityLayerEnabled]);
+
+  useEffect(() => {
+    if (!mapRef.current || !onBoundsChange) return;
+    const map = mapRef.current;
+
+    const publishBounds = () => {
+      const bounds = map.getBounds();
+      onBoundsChange({
+        south: bounds.getSouth(),
+        north: bounds.getNorth(),
+        west: bounds.getWest(),
+        east: bounds.getEast()
+      });
+    };
+
+    publishBounds();
+    map.on('moveend', publishBounds);
+    map.on('zoomend', publishBounds);
+
+    return () => {
+      map.off('moveend', publishBounds);
+      map.off('zoomend', publishBounds);
+    };
+  }, [mapReady, onBoundsChange]);
 
   useEffect(() => {
     if (!selectedBusiness || !mapRef.current) return;
@@ -255,23 +415,25 @@ export function MapPanel({ businesses, selectedBusiness }: Props) {
 
   return (
     <div className="relative h-full min-h-[520px] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-      <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
-        <p className="mb-2 font-semibold">Opportunity Heatmap</p>
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-green-500" />
-            <span>Green → High Opportunity</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-yellow-400" />
-            <span>Yellow → Medium Opportunity</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
-            <span>Red → Saturated Area</span>
+      {opportunityLayerEnabled ? (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[1200] rounded-md border border-slate-700 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-lg">
+          <p className="mb-2 font-semibold">Opportunity Layer</p>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-sm bg-green-500" />
+              <span>Green → High Opportunity</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-sm bg-yellow-400" />
+              <span>Yellow → Medium Opportunity</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-sm bg-red-500" />
+              <span>Red → Saturated / Lower Opportunity</span>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
       <div ref={mapElementRef} className="h-full w-full" />
     </div>
   );
