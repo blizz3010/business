@@ -14,6 +14,7 @@ type Props = {
   selectedCategory?: string;
   showBusinessMarkers: boolean;
   opportunityLayerEnabled?: boolean;
+  flyTo?: [number, number] | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
 
@@ -47,6 +48,7 @@ export function MapPanel({
   selectedCategory,
   showBusinessMarkers,
   opportunityLayerEnabled = false,
+  flyTo,
   onBoundsChange
 }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
@@ -348,6 +350,12 @@ export function MapPanel({
       layer.clearLayers();
     };
   }, [mapReady, opportunityLayerEnabled, selectedCategory, fetchAndRenderOpportunities]);
+
+  // ── Fly to location ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!flyTo || !mapRef.current) return;
+    mapRef.current.flyTo(flyTo, 12, { duration: 1.2 });
+  }, [flyTo]);
 
   // ── Category legend overlay ────────────────────────────────────────────
   useEffect(() => {

@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
 import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
@@ -62,9 +62,14 @@ export default function Home() {
   const [selectedBusinesses, setSelectedBusinesses] = useState<Business[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [bounds, setBounds] = useState<ViewportBounds | null>(null);
+  const [flyTo, setFlyTo] = useState<[number, number] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const businessRequestAbortRef = useRef<AbortController | null>(null);
+
+  const handleFlyTo = useCallback((lat: number, lng: number) => {
+    setFlyTo([lat, lng]);
+  }, []);
 
   const categoryOptions = useMemo(() => categories.map((item) => item.category), [categories]);
   const isMisconfiguredProdApiBase =
@@ -169,6 +174,7 @@ export default function Home() {
           selectedCategory={filters.category}
           showBusinessMarkers={filters.showBusinessMarkers}
           opportunityLayerEnabled={filters.opportunityLayerEnabled}
+          flyTo={flyTo}
           onBoundsChange={setBounds}
         />
       </section>
@@ -179,6 +185,7 @@ export default function Home() {
           categories={categoryOptions}
           categoryInsights={categories}
           onFilterChange={setFilters}
+          onFlyTo={handleFlyTo}
         />
       </aside>
     </main>
