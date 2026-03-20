@@ -206,15 +206,16 @@ export function MapPanel({
     const bounds = map.getBounds();
     const zoom = map.getZoom();
 
-    // Adaptive cell size based on zoom
+    // Adaptive scan resolution based on zoom
     let cellSize = 500;
-    if (zoom <= 10) cellSize = 1000;
-    else if (zoom <= 12) cellSize = 750;
+    if (zoom <= 10) cellSize = 1500;
+    else if (zoom <= 12) cellSize = 1000;
+    else if (zoom <= 13) cellSize = 750;
 
-    // Adaptive radius
-    let radius = 800;
-    if (zoom >= 14) radius = 500;
-    else if (zoom <= 10) radius = 1200;
+    // Adaptive search radius
+    let radius = 1500;
+    if (zoom >= 14) radius = 1000;
+    else if (zoom <= 10) radius = 2500;
 
     const params = new URLSearchParams({
       south: String(bounds.getSouth()),
@@ -223,7 +224,7 @@ export function MapPanel({
       east: String(bounds.getEast()),
       cellSize: String(cellSize),
       radius: String(radius),
-      limit: '80'
+      limit: '15'
     });
 
     if (selectedCategory) {
@@ -249,6 +250,7 @@ export function MapPanel({
 
       for (const cell of cells) {
         const catColor = getCategoryColor(cell.category);
+        const gapMeters = Math.round((cell.gap_km ?? 0) * 1000);
 
         const rect = rectangle(
           [
@@ -258,24 +260,24 @@ export function MapPanel({
           {
             color: catColor.stroke,
             fillColor: catColor.fill,
-            fillOpacity: Math.min(0.15 + (cell.score / 100) * 0.35, 0.50),
-            weight: 1.5
+            fillOpacity: Math.min(0.20 + (cell.score / 100) * 0.40, 0.55),
+            weight: 2
           }
         );
 
-        // Build popup with score breakdown and competitor list
+        // Build popup
         const competitorHtml = cell.top_competitors.length === 0
-          ? '<em>No competitors in this category nearby</em>'
+          ? '<em>No competitors nearby</em>'
           : cell.top_competitors
               .map(
                 (c) =>
-                  `• ${escapeHtml(c.name)} — ★${c.rating ?? 'N/A'} (${c.review_count} reviews) · ${(c.distance_km * 1000).toFixed(0)}m`
+                  `<div style="margin:2px 0;">• ${escapeHtml(c.name)} — ★${c.rating ?? 'N/A'} (${c.review_count} reviews) · ${(c.distance_km * 1000).toFixed(0)}m away</div>`
               )
-              .join('<br/>');
+              .join('');
 
         const scoreBarHtml = (label: string, value: number, color: string) =>
           `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
-            <span style="width:70px;font-size:10px;color:#94a3b8;">${label}</span>
+            <span style="width:80px;font-size:10px;color:#94a3b8;">${label}</span>
             <div style="flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;">
               <div style="width:${value}%;height:100%;background:${color};border-radius:3px;"></div>
             </div>
@@ -286,22 +288,20 @@ export function MapPanel({
           <div style="font-size:12px;line-height:1.5;max-width:300px;">
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
               <span style="width:10px;height:10px;border-radius:2px;background:${catColor.fill};border:1px solid ${catColor.stroke};display:inline-block;"></span>
-              <strong>${escapeHtml(cell.category)} opportunity</strong>
+              <strong>${escapeHtml(cell.category)} gap</strong>
               <span style="margin-left:auto;font-weight:bold;font-size:14px;">${cell.score}</span>
             </div>
 
-            ${scoreBarHtml('Demand', cell.demand_score, '#38bdf8')}
-            ${scoreBarHtml('Scarcity', cell.scarcity_score, '#22c55e')}
+            <div style="margin-bottom:6px;font-size:11px;color:#94a3b8;">
+              Nearest ${escapeHtml(cell.category)} is <strong style="color:#e2e8f0;">${gapMeters >= 1000 ? (gapMeters / 1000).toFixed(1) + 'km' : gapMeters + 'm'}</strong> away
+            </div>
+
+            ${scoreBarHtml('Gap distance', cell.scarcity_score, '#22c55e')}
+            ${scoreBarHtml('Local demand', cell.demand_score, '#38bdf8')}
             ${scoreBarHtml('Quality gap', cell.quality_gap_score, '#facc15')}
 
             <div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;">
-              <strong>Nearby businesses:</strong> ${cell.total_nearby}<br/>
-              <strong>${escapeHtml(cell.category)} competitors:</strong> ${cell.competitor_count}<br/>
-              ${cell.avg_competitor_rating !== null ? `<strong>Avg competitor rating:</strong> ${cell.avg_competitor_rating.toFixed(1)}★<br/>` : ''}
-            </div>
-
-            <div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;">
-              <strong>Nearest ${escapeHtml(cell.category)} competitors</strong><br/>
+              <strong>Nearest ${escapeHtml(cell.category)} businesses</strong>
               ${competitorHtml}
             </div>
           </div>
