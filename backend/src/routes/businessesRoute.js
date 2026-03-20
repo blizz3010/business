@@ -57,10 +57,7 @@ businessesRouter.get('/businesses', async (req, res) => {
 
     if (category) {
       params.push(String(category).toLowerCase());
-      whereClauses.push(`(
-        LOWER(category) = $${params.length}
-        OR LOWER(normalized_category) = $${params.length}
-      )`);
+      whereClauses.push(`LOWER(normalized_category) = $${params.length}`);
     }
 
     const parsedLimit = Math.min(Math.max(parseNumber(limit) ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
