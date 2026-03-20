@@ -17,8 +17,6 @@ export function Dashboard({
   onFilterChange,
   onSelectBusiness
 }: Props) {
-  const top50PriorityTargets = opportunities.slice(0, 50);
-
   return (
     <div className="space-y-4">
       {/* ── Filters ─────────────────────────────────────────────────────── */}
@@ -67,41 +65,6 @@ export function Dashboard({
             ))}
           </div>
 
-          <label className="block">
-            <span className="mb-1 block text-slate-300">Minimum rating</span>
-            <input
-              type="number"
-              min={0}
-              max={5}
-              step={0.1}
-              className="w-full rounded bg-slate-800 p-2"
-              value={filters.minRating ?? ''}
-              onChange={(event) =>
-                onFilterChange({
-                  ...filters,
-                  minRating: event.target.value === '' ? undefined : Number(event.target.value)
-                })
-              }
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-slate-300">Minimum review count</span>
-            <input
-              type="number"
-              min={0}
-              step={10}
-              className="w-full rounded bg-slate-800 p-2"
-              value={filters.minReviews ?? ''}
-              onChange={(event) =>
-                onFilterChange({
-                  ...filters,
-                  minReviews: event.target.value === '' ? undefined : Number(event.target.value)
-                })
-              }
-            />
-          </label>
-
           <label className="flex items-center gap-2 text-slate-200">
             <input
               type="checkbox"
@@ -120,42 +83,6 @@ export function Dashboard({
             Show Business Markers
           </label>
         </div>
-      </section>
-
-      {/* ── Priority Targets ────────────────────────────────────────────── */}
-      <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="text-md font-semibold">Top 50 Priority Targets</h3>
-        <p className="mt-1 text-xs text-slate-400">
-          Weak-rated businesses with high review counts — potential opportunities to outperform
-        </p>
-        <ul className="mt-2 max-h-[320px] space-y-2 overflow-auto text-sm">
-          {top50PriorityTargets.map((business) => {
-            const catColor = getCategoryColor(business.normalized_category);
-            return (
-              <li key={`${business.name}-${business.lat}-${business.lng}`}>
-                <button
-                  type="button"
-                  className="w-full rounded bg-slate-800 p-2 text-left hover:bg-slate-700"
-                  onClick={() => onSelectBusiness(business)}
-                >
-                  <div className="flex justify-between gap-2">
-                    <div className="flex items-center gap-2 truncate">
-                      <span
-                        className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-sm"
-                        style={{ background: catColor.fill, border: `1px solid ${catColor.stroke}` }}
-                      />
-                      <span className="truncate">{business.name}</span>
-                    </div>
-                    <span className="font-semibold text-rose-300">{Math.round(business.opportunity_score)}</span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    {business.normalized_category} · Rating {business.rating ?? 'N/A'} · {business.review_count} reviews
-                  </p>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
       </section>
 
       {/* ── Category Insights ───────────────────────────────────────────── */}
