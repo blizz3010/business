@@ -120,14 +120,15 @@ export default function Home() {
           west: String(bounds.west),
           east: String(bounds.east)
         });
+        if (filters.category) {
+          baseParams.set('category', filters.category);
+        }
         const response = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`, { signal: controller.signal });
         if (!response.ok) throw new Error(await readErrorMessage(response));
         const rows: Business[] = await response.json();
 
         setAllBusinesses(rows);
-        setSelectedBusinesses(
-          filters.category ? rows.filter((business) => business.normalized_category === filters.category) : rows
-        );
+        setSelectedBusinesses(rows);
       } catch (fetchError) {
         if ((fetchError as Error)?.name === 'AbortError') return;
         setAllBusinesses([]);
