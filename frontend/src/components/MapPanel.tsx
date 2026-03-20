@@ -95,7 +95,7 @@ export function MapPanel({
       }).addTo(map);
 
       mapRef.current = map;
-      clusterLayerRef.current = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 45 });
+      clusterLayerRef.current = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 80 });
       opportunityLayerRef.current = L.layerGroup();
       map.addLayer(clusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
