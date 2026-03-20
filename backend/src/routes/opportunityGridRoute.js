@@ -37,17 +37,17 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
       return sendValidationError(res, 'south, north, west, east must form a valid bounding box.');
     }
 
-    const cellSizeMeters = parseNumber(req.query.cellSize) ?? 500;
-    const radiusMeters = parseNumber(req.query.radius) ?? 1500;
+    const cellSizeMeters = Math.min(Math.max(parseNumber(req.query.cellSize) ?? 500, 100), 2000);
+    const radiusMeters = Math.min(Math.max(parseNumber(req.query.radius) ?? 1500, 200), 5000);
     const limit = Math.min(parseNumber(req.query.limit) ?? 15, 50);
     const filterCategory = req.query.category ? String(req.query.category) : null;
 
     // Minimum distance (km) between returned opportunity markers
-    const MIN_MARKER_SPACING_KM = parseNumber(req.query.minSpacing) ?? 1.2;
+    const MIN_MARKER_SPACING_KM = Math.min(Math.max(parseNumber(req.query.minSpacing) ?? 1.2, 0.1), 10.0);
     // Minimum distance (km) from nearest competitor to be considered a gap
-    const MIN_GAP_KM = parseNumber(req.query.minGap) ?? 0.6;
+    const MIN_GAP_KM = Math.min(Math.max(parseNumber(req.query.minGap) ?? 0.6, 0.05), 5.0);
 
-    const cacheKey = `oppgrid2:${round4(south)}:${round4(north)}:${round4(west)}:${round4(east)}:${cellSizeMeters}:${radiusMeters}:${filterCategory ?? 'all'}`;
+    const cacheKey = `oppgrid2:${round4(south)}:${round4(north)}:${round4(west)}:${round4(east)}:${cellSizeMeters}:${radiusMeters}:${MIN_GAP_KM}:${MIN_MARKER_SPACING_KM}:${filterCategory ?? 'all'}`;
 
     if (redis) {
       try {
@@ -132,8 +132,8 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
 
           // Find nearest competitor distance
           let nearestCompDist = radiusKm; // default to max if none found
-          if (competitors.length > 0) {
-            nearestCompDist = Math.min(...competitors.map((c) => c.distance));
+          for (const c of competitors) {
+            if (c.distance < nearestCompDist) nearestCompDist = c.distance;
           }
 
           // Skip if too close to an existing competitor (not a real gap)
