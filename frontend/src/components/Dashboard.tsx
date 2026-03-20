@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import { BusinessFilters, CategoryInsight, getCategoryColor, CATEGORY_COLORS } from '@/lib/types';
 
