@@ -348,13 +348,12 @@ export function MapPanel({
     // Initial render
     fetchAndRenderOpportunities();
 
+    // moveend fires after zoomend, so one listener is sufficient
     map.on('moveend', scheduleRender);
-    map.on('zoomend', scheduleRender);
 
     return () => {
       if (redrawTimerRef.current) clearTimeout(redrawTimerRef.current);
       map.off('moveend', scheduleRender);
-      map.off('zoomend', scheduleRender);
       if (opportunityAbortRef.current) opportunityAbortRef.current.abort();
       layer.clearLayers();
     };
@@ -362,9 +361,9 @@ export function MapPanel({
 
   // ── Fly to location ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!flyTo || !mapRef.current) return;
+    if (!flyTo || !mapReady || !mapRef.current) return;
     mapRef.current.flyTo(flyTo, 12, { duration: 1.2 });
-  }, [flyTo]);
+  }, [flyTo, mapReady]);
 
   // ── Category legend overlay ────────────────────────────────────────────
   useEffect(() => {

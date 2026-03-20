@@ -19,17 +19,18 @@ export function Dashboard({
   onFlyTo
 }: Props) {
   const [zipcode, setZipcode] = useState('');
+  const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
   const handleZipcodeSearch = async () => {
     const trimmed = zipcode.trim();
-    if (!trimmed) return;
+    if (!trimmed || searching) return;
     setLocationError(null);
+    setSearching(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(trimmed)}&country=us&format=json&limit=1`,
-        { headers: { 'User-Agent': 'StreetScopeAI/1.0' } }
+        `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(trimmed)}&country=us&format=json&limit=1`
       );
       const data = await res.json();
       if (data.length === 0) {
@@ -39,6 +40,8 @@ export function Dashboard({
       onFlyTo(parseFloat(data[0].lat), parseFloat(data[0].lon));
     } catch {
       setLocationError('Lookup failed — try again');
+    } finally {
+      setSearching(false);
     }
   };
 
@@ -54,11 +57,14 @@ export function Dashboard({
         onFlyTo(pos.coords.latitude, pos.coords.longitude);
         setLocating(false);
       },
-      () => {
-        setLocationError('Location access denied');
+      (err) => {
+        const msg = err.code === 1 ? 'Location access denied'
+          : err.code === 3 ? 'Location request timed out'
+          : 'Could not determine location';
+        setLocationError(msg);
         setLocating(false);
       },
-      { timeout: 10000 }
+      { timeout: 10000, maximumAge: 30000 }
     );
   };
 
@@ -80,7 +86,8 @@ export function Dashboard({
             <button
               type="button"
               onClick={handleZipcodeSearch}
-              className="rounded bg-blue-600 px-3 py-2 text-white transition-colors hover:bg-blue-500"
+              disabled={searching}
+              className="rounded bg-blue-600 px-3 py-2 text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
             >
               Go
             </button>
