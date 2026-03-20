@@ -146,20 +146,22 @@ export function MapPanel({
   // ── Business markers ───────────────────────────────────────────────────
   useEffect(() => {
     if (!leafletRef.current || !mapRef.current || !clusterLayerRef.current) return;
-    const { circleMarker } = leafletRef.current;
+    const { divIcon } = leafletRef.current;
+    const L = (window as any).L;
+    if (!L) return;
     const map = mapRef.current;
     const clusterLayer = clusterLayerRef.current;
     clusterLayer.clearLayers();
 
     businesses.forEach((business) => {
       const catColor = getCategoryColor(business.normalized_category);
-      const marker = circleMarker([business.lat, business.lng], {
-        radius: 6,
-        color: catColor.stroke,
-        fillColor: catColor.fill,
-        fillOpacity: 0.85,
-        weight: 1
+      const icon = divIcon({
+        className: '',
+        html: `<div style="width:12px;height:12px;border-radius:50%;background:${catColor.fill};border:1.5px solid ${catColor.stroke};opacity:0.9;"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
       });
+      const marker = L.marker([business.lat, business.lng], { icon });
 
       marker.bindPopup(`
         <div style="font-size:12px;line-height:1.4;max-width:280px;">
@@ -345,7 +347,7 @@ export function MapPanel({
       if (opportunityAbortRef.current) opportunityAbortRef.current.abort();
       layer.clearLayers();
     };
-  }, [opportunityLayerEnabled, selectedCategory, fetchAndRenderOpportunities]);
+  }, [mapReady, opportunityLayerEnabled, selectedCategory, fetchAndRenderOpportunities]);
 
   // ── Fly to selected business ───────────────────────────────────────────
   useEffect(() => {
@@ -415,7 +417,8 @@ export function MapPanel({
   return (
     <div
       ref={mapElementRef}
-      className="h-[420px] w-full rounded-xl border border-slate-800 bg-slate-900 lg:h-[460px]"
+      className="w-full rounded-xl border border-slate-800 bg-slate-900"
+      style={{ height: 'calc(100vh - 120px)', minHeight: '400px' }}
     />
   );
 }

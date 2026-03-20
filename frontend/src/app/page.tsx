@@ -7,7 +7,7 @@ import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
 
 const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
   ssr: false,
-  loading: () => <div className="h-[420px] animate-pulse rounded-xl bg-slate-900 lg:h-[460px]" />
+  loading: () => <div className="animate-pulse rounded-xl bg-slate-900" style={{ height: 'calc(100vh - 120px)', minHeight: '400px' }} />
 });
 
 const API_BASE =
