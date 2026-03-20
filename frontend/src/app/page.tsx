@@ -14,8 +14,6 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 const DEFAULT_FILTERS: BusinessFilters = {
-  minRating: undefined,
-  minReviews: undefined,
   category: 'Automotive',
   showBusinessMarkers: true,
   opportunityLayerEnabled: true
@@ -62,9 +60,7 @@ export default function Home() {
   const [filters, setFilters] = useState<BusinessFilters>(DEFAULT_FILTERS);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [selectedBusinesses, setSelectedBusinesses] = useState<Business[]>([]);
-  const [opportunities, setOpportunities] = useState<Business[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
-  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,19 +81,13 @@ export default function Home() {
       }
 
       try {
-        const [categoryResponse, opportunityResponse] = await Promise.all([
-          fetch(`${API_BASE}/api/categories`),
-          fetch(`${API_BASE}/api/priority-targets`)
-        ]);
+        const categoryResponse = await fetch(`${API_BASE}/api/categories`);
 
-        if (!categoryResponse.ok || !opportunityResponse.ok) {
-          throw new Error('Failed to load one or more data sources.');
+        if (!categoryResponse.ok) {
+          throw new Error('Failed to load category data.');
         }
 
-        const [categoryData, opportunityData] = await Promise.all([categoryResponse.json(), opportunityResponse.json()]);
-
-        setCategories(categoryData);
-        setOpportunities(opportunityData.sort((a: Business, b: Business) => b.opportunity_score - a.opportunity_score));
+        setCategories(await categoryResponse.json());
       } catch (fetchError) {
         setError(
           fetchError instanceof Error
@@ -130,8 +120,6 @@ export default function Home() {
           west: String(bounds.west),
           east: String(bounds.east)
         });
-        if (filters.minRating !== undefined) baseParams.set('minRating', String(filters.minRating));
-        if (filters.minReviews !== undefined) baseParams.set('minReviews', String(filters.minReviews));
         const response = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`, { signal: controller.signal });
         if (!response.ok) throw new Error(await readErrorMessage(response));
         const rows: Business[] = await response.json();
@@ -162,7 +150,7 @@ export default function Home() {
         businessRequestAbortRef.current.abort();
       }
     };
-  }, [bounds, filters.category, filters.minRating, filters.minReviews]);
+  }, [bounds, filters.category]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
@@ -180,7 +168,6 @@ export default function Home() {
           selectedCategory={filters.category}
           showBusinessMarkers={filters.showBusinessMarkers}
           opportunityLayerEnabled={filters.opportunityLayerEnabled}
-          selectedBusiness={selectedBusiness}
           onBoundsChange={setBounds}
         />
       </section>
@@ -189,10 +176,8 @@ export default function Home() {
         <Dashboard
           filters={filters}
           categories={categoryOptions}
-          opportunities={opportunities}
           categoryInsights={categories}
           onFilterChange={setFilters}
-          onSelectBusiness={setSelectedBusiness}
         />
       </aside>
     </main>

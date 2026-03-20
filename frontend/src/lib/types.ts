@@ -18,8 +18,6 @@ export type CategoryInsight = {
 };
 
 export type BusinessFilters = {
-  minRating?: number;
-  minReviews?: number;
   category?: string;
   showBusinessMarkers: boolean;
   opportunityLayerEnabled: boolean;

@@ -14,7 +14,6 @@ type Props = {
   selectedCategory?: string;
   showBusinessMarkers: boolean;
   opportunityLayerEnabled?: boolean;
-  selectedBusiness?: Business | null;
   onBoundsChange?: (bounds: { south: number; north: number; west: number; east: number }) => void;
 };
 
@@ -24,7 +23,6 @@ type LeafletRuntime = {
   markerClusterGroup: any;
   layerGroup: any;
   rectangle: any;
-  circleMarker: any;
   divIcon: any;
 };
 
@@ -49,7 +47,6 @@ export function MapPanel({
   selectedCategory,
   showBusinessMarkers,
   opportunityLayerEnabled = false,
-  selectedBusiness,
   onBoundsChange
 }: Props) {
   const mapElementRef = useRef<HTMLDivElement>(null);
@@ -85,7 +82,6 @@ export function MapPanel({
         markerClusterGroup: L.markerClusterGroup,
         layerGroup: L.layerGroup,
         rectangle: L.rectangle,
-        circleMarker: L.circleMarker,
         divIcon: L.divIcon
       };
 
@@ -95,7 +91,11 @@ export function MapPanel({
       }).addTo(map);
 
       mapRef.current = map;
-      clusterLayerRef.current = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 80 });
+      clusterLayerRef.current = L.markerClusterGroup({
+        showCoverageOnHover: false,
+        maxClusterRadius: 80,
+        singleMarkerMode: true
+      });
       opportunityLayerRef.current = L.layerGroup();
       map.addLayer(clusterLayerRef.current);
       map.addLayer(opportunityLayerRef.current);
@@ -348,16 +348,6 @@ export function MapPanel({
       layer.clearLayers();
     };
   }, [mapReady, opportunityLayerEnabled, selectedCategory, fetchAndRenderOpportunities]);
-
-  // ── Fly to selected business ───────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedBusiness || !mapRef.current) return;
-    mapRef.current.flyTo(
-      [selectedBusiness.lat, selectedBusiness.lng],
-      Math.max(mapRef.current.getZoom(), 14),
-      { duration: 0.6 }
-    );
-  }, [selectedBusiness]);
 
   // ── Category legend overlay ────────────────────────────────────────────
   useEffect(() => {
