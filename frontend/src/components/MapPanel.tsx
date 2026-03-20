@@ -96,7 +96,8 @@ export function MapPanel({
       clusterLayerRef.current = L.markerClusterGroup({
         showCoverageOnHover: false,
         maxClusterRadius: 80,
-        singleMarkerMode: true
+        singleMarkerMode: true,
+        disableClusteringAtZoom: 14
       });
       opportunityLayerRef.current = L.layerGroup();
       map.addLayer(clusterLayerRef.current);
