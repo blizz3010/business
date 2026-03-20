@@ -1,9 +1,15 @@
 const CATEGORY_GROUPS = [
-  { group: 'Food & Dining', matches: ['restaurant', 'food', 'cafe'] },
-  { group: 'Automotive', matches: ['gas_station', 'auto', 'car', 'tire'] },
-  { group: 'Health', matches: ['dentist', 'doctor', 'hospital', 'medical', 'pharmacy'] },
-  { group: 'Retail', matches: ['store', 'supermarket', 'market', 'grocery', 'shop'] },
-  { group: 'Fitness', matches: ['gym', 'fitness'] }
+  { group: 'Food & Dining', matches: ['restaurant', 'food', 'cafe', 'bakery', 'pizza', 'coffee'] },
+  { group: 'Automotive', matches: ['gas_station', 'auto', 'car', 'tire', 'mechanic', 'oil_change', 'transmission'] },
+  { group: 'Car Wash', matches: ['car_wash', 'detailing', 'wash'] },
+  { group: 'Health', matches: ['dentist', 'doctor', 'hospital', 'medical', 'pharmacy', 'clinic', 'optometrist', 'chiropractor'] },
+  { group: 'Beauty & Salon', matches: ['salon', 'barber', 'spa', 'nail', 'hair', 'beauty', 'cosmetic'] },
+  { group: 'Retail', matches: ['store', 'supermarket', 'market', 'grocery', 'shop', 'mall', 'outlet'] },
+  { group: 'Fitness', matches: ['gym', 'fitness', 'yoga', 'pilates', 'crossfit'] },
+  { group: 'Home Services', matches: ['plumber', 'electrician', 'hvac', 'roofing', 'landscaping', 'cleaning', 'pest_control', 'locksmith'] },
+  { group: 'Pet Services', matches: ['veterinar', 'pet', 'grooming', 'kennel', 'animal'] },
+  { group: 'Education', matches: ['school', 'tutor', 'daycare', 'preschool', 'learning', 'training'] },
+  { group: 'Entertainment', matches: ['theater', 'cinema', 'bowling', 'arcade', 'amusement', 'recreation'] }
 ];
 
 function escapeSqlLiteral(value) {

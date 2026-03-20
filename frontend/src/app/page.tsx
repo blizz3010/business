@@ -16,7 +16,7 @@ const API_BASE =
 const DEFAULT_FILTERS: BusinessFilters = {
   minRating: undefined,
   minReviews: undefined,
-  category: undefined,
+  category: 'Automotive',
   showBusinessMarkers: true,
   opportunityLayerEnabled: true
 };
