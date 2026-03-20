@@ -206,16 +206,23 @@ export function MapPanel({
     const bounds = map.getBounds();
     const zoom = map.getZoom();
 
-    // Adaptive scan resolution based on zoom
+    // Adaptive parameters based on zoom level
     let cellSize = 500;
-    if (zoom <= 10) cellSize = 1500;
-    else if (zoom <= 12) cellSize = 1000;
-    else if (zoom <= 13) cellSize = 750;
-
-    // Adaptive search radius
     let radius = 1500;
-    if (zoom >= 14) radius = 1000;
-    else if (zoom <= 10) radius = 2500;
+    let minGap = 0.6;    // km - minimum distance from nearest competitor to count as gap
+    let minSpacing = 1.2; // km - minimum distance between opportunity markers
+
+    if (zoom <= 10) {
+      cellSize = 1500; radius = 2500; minGap = 1.5; minSpacing = 3.0;
+    } else if (zoom <= 11) {
+      cellSize = 1000; radius = 2000; minGap = 1.0; minSpacing = 2.0;
+    } else if (zoom <= 12) {
+      cellSize = 800; radius = 1500; minGap = 0.6; minSpacing = 1.2;
+    } else if (zoom <= 13) {
+      cellSize = 600; radius = 1200; minGap = 0.4; minSpacing = 0.8;
+    } else {
+      cellSize = 400; radius = 800; minGap = 0.25; minSpacing = 0.5;
+    }
 
     const params = new URLSearchParams({
       south: String(bounds.getSouth()),
@@ -224,6 +231,8 @@ export function MapPanel({
       east: String(bounds.getEast()),
       cellSize: String(cellSize),
       radius: String(radius),
+      minGap: String(minGap),
+      minSpacing: String(minSpacing),
       limit: '15'
     });
 
