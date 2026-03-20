@@ -43,9 +43,9 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
     const filterCategory = req.query.category ? String(req.query.category) : null;
 
     // Minimum distance (km) between returned opportunity markers
-    const MIN_MARKER_SPACING_KM = 1.2;
+    const MIN_MARKER_SPACING_KM = parseNumber(req.query.minSpacing) ?? 1.2;
     // Minimum distance (km) from nearest competitor to be considered a gap
-    const MIN_GAP_KM = 0.6;
+    const MIN_GAP_KM = parseNumber(req.query.minGap) ?? 0.6;
 
     const cacheKey = `oppgrid2:${round4(south)}:${round4(north)}:${round4(west)}:${round4(east)}:${cellSizeMeters}:${radiusMeters}:${filterCategory ?? 'all'}`;
 
