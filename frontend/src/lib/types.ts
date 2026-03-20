@@ -29,6 +29,7 @@ export type OpportunityCell = {
   lng: number;
   category: string;
   score: number;
+  gap_km: number;
   demand_score: number;
   scarcity_score: number;
   quality_gap_score: number;
