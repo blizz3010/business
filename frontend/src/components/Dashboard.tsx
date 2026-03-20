@@ -1,21 +1,17 @@
-import { Business, BusinessFilters, CategoryInsight, getCategoryColor, CATEGORY_COLORS } from '@/lib/types';
+import { BusinessFilters, CategoryInsight, getCategoryColor, CATEGORY_COLORS } from '@/lib/types';
 
 type Props = {
   filters: BusinessFilters;
   categories: string[];
-  opportunities: Business[];
   categoryInsights: CategoryInsight[];
   onFilterChange: (next: BusinessFilters) => void;
-  onSelectBusiness: (business: Business) => void;
 };
 
 export function Dashboard({
   filters,
   categories,
-  opportunities,
   categoryInsights,
-  onFilterChange,
-  onSelectBusiness
+  onFilterChange
 }: Props) {
   return (
     <div className="space-y-4">
@@ -95,13 +91,21 @@ export function Dashboard({
             const isOpportunity = avgReviews > 100 && avgRating < 3.8;
             const catColor = getCategoryColor(insight.category);
 
+            const isSelected = filters.category === insight.category;
+
             return (
               <li
                 key={insight.category}
-                className={`rounded p-2 ${isOpportunity ? 'bg-amber-900/40' : 'bg-slate-800'}`}
+                className={`cursor-pointer rounded p-2 transition-colors ${isOpportunity ? 'bg-amber-900/40 hover:bg-amber-900/60' : 'bg-slate-800 hover:bg-slate-700'} ${isSelected ? 'ring-1 ring-slate-500' : ''}`}
                 style={{
                   borderLeft: `3px solid ${catColor.stroke}`
                 }}
+                onClick={() =>
+                  onFilterChange({
+                    ...filters,
+                    category: isSelected ? undefined : insight.category
+                  })
+                }
               >
                 <div className="flex justify-between">
                   <div className="flex items-center gap-2">

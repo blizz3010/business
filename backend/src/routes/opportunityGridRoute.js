@@ -164,7 +164,7 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
               .filter((r) => r !== null && r !== undefined);
             const avgRating = ratings.length > 0
               ? ratings.reduce((s, r) => s + r, 0) / ratings.length
-              : 5.0; // assume strong if no rating data
+              : 3.5; // assume average if no rating data
             // Lower avg rating = bigger gap = higher score
             qualityGapScore = Math.max(0, (4.0 - avgRating) / 4.0);
           } else {
