@@ -1,5 +1,5 @@
 import { pgPool } from '../db/index.js';
-import { normalizeCategory } from './categoryService.js';
+import { normalizeCategory, normalizeSubcategory } from './categoryService.js';
 
 const UPSERT_BATCH_SIZE = 500;
 
@@ -13,12 +13,14 @@ export async function upsertBusinesses(businesses) {
       const batch = businesses.slice(start, start + UPSERT_BATCH_SIZE);
       const values = [];
       const placeholders = batch.map((b, index) => {
-        const offset = index * 11;
+        const offset = index * 12;
+        const normalizedCat = normalizeCategory(b.category);
         values.push(
           b.place_id,
           b.name,
           b.category,
-          normalizeCategory(b.category),
+          normalizedCat,
+          normalizeSubcategory(b.category, b.name),
           b.lat,
           b.lng,
           b.rating ?? null,
@@ -27,17 +29,18 @@ export async function upsertBusinesses(businesses) {
           b.street ?? null,
           b.city ?? 'Orlando'
         );
-        return `($${offset + 1},$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5},$${offset + 6},$${offset + 7},$${offset + 8},$${offset + 9},$${offset + 10},$${offset + 11})`;
+        return `($${offset + 1},$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5},$${offset + 6},$${offset + 7},$${offset + 8},$${offset + 9},$${offset + 10},$${offset + 11},$${offset + 12})`;
       });
 
       await client.query(
-        `INSERT INTO businesses (place_id, name, category, normalized_category, lat, lng, rating, review_count, address, street, city)
+        `INSERT INTO businesses (place_id, name, category, normalized_category, subcategory, lat, lng, rating, review_count, address, street, city)
          VALUES ${placeholders.join(',')}
          ON CONFLICT (place_id)
          DO UPDATE SET
           name = EXCLUDED.name,
           category = EXCLUDED.category,
           normalized_category = EXCLUDED.normalized_category,
+          subcategory = EXCLUDED.subcategory,
           lat = EXCLUDED.lat,
           lng = EXCLUDED.lng,
           rating = EXCLUDED.rating,

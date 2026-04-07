@@ -41,13 +41,14 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
     const radiusMeters = Math.min(Math.max(parseNumber(req.query.radius) ?? 1500, 200), 5000);
     const limit = Math.min(parseNumber(req.query.limit) ?? 15, 50);
     const filterCategory = req.query.category ? String(req.query.category) : null;
+    const filterSubcategory = req.query.subcategory ? String(req.query.subcategory) : null;
 
     // Minimum distance (km) between returned opportunity markers
     const MIN_MARKER_SPACING_KM = Math.min(Math.max(parseNumber(req.query.minSpacing) ?? 1.2, 0.1), 10.0);
     // Minimum distance (km) from nearest competitor to be considered a gap
     const MIN_GAP_KM = Math.min(Math.max(parseNumber(req.query.minGap) ?? 0.6, 0.05), 5.0);
 
-    const cacheKey = `oppgrid2:${round4(south)}:${round4(north)}:${round4(west)}:${round4(east)}:${cellSizeMeters}:${radiusMeters}:${MIN_GAP_KM}:${MIN_MARKER_SPACING_KM}:${filterCategory ?? 'all'}`;
+    const cacheKey = `oppgrid2:${round4(south)}:${round4(north)}:${round4(west)}:${round4(east)}:${cellSizeMeters}:${radiusMeters}:${MIN_GAP_KM}:${MIN_MARKER_SPACING_KM}:${filterCategory ?? 'all'}:${filterSubcategory ?? 'all'}`;
 
     if (redis) {
       try {
@@ -61,7 +62,7 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
     // ── 1. Fetch businesses in padded viewport ────────────────────────────
     const padDeg = radiusMeters / 111320;
     const queryResult = await pgPool.query(
-      `SELECT name, lat, lng, rating, review_count, category, normalized_category
+      `SELECT name, lat, lng, rating, review_count, category, normalized_category, subcategory
        FROM businesses
        WHERE lat BETWEEN $1 AND $2
          AND lng BETWEEN $3 AND $4
@@ -75,11 +76,24 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
       return res.json([]);
     }
 
-    // ── 2. Determine which category to evaluate ──────────────────────────
-    const allCategories = [...new Set(allBusinesses.map((b) => b.normalized_category))];
-    const categoriesToEvaluate = filterCategory
-      ? allCategories.filter((c) => c === filterCategory)
-      : allCategories;
+    // ── 2. Determine which category/subcategory to evaluate ──────────────
+    // When subcategory is provided, we find gaps for that specific type
+    const useSubcategory = !!filterSubcategory;
+    const groupField = useSubcategory ? 'subcategory' : 'normalized_category';
+
+    const allCategories = [...new Set(allBusinesses.map((b) => b[groupField]))];
+    let categoriesToEvaluate;
+    if (filterSubcategory) {
+      categoriesToEvaluate = allCategories.filter((c) => c === filterSubcategory);
+      // If no businesses of this subcategory exist in the viewport, still evaluate it as a gap
+      if (categoriesToEvaluate.length === 0) {
+        categoriesToEvaluate = [filterSubcategory];
+      }
+    } else if (filterCategory) {
+      categoriesToEvaluate = allCategories.filter((c) => c === filterCategory);
+    } else {
+      categoriesToEvaluate = allCategories;
+    }
 
     if (categoriesToEvaluate.length === 0) {
       return res.json([]);
@@ -88,7 +102,7 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
     // ── 3. Build spatial index ───────────────────────────────────────────
     const BUCKET_DEG = 0.008;
     const spatialIndex = new Map();
-    const categoryIndex = new Map(); // separate index per category
+    const categoryIndex = new Map(); // separate index per category/subcategory
 
     for (const b of allBusinesses) {
       const bKey = bucketKey(b.lat, b.lng, BUCKET_DEG);
@@ -96,7 +110,7 @@ opportunityGridRouter.get('/opportunity-grid', async (req, res) => {
       if (!spatialIndex.has(bKey)) spatialIndex.set(bKey, []);
       spatialIndex.get(bKey).push(b);
 
-      const cat = b.normalized_category;
+      const cat = b[groupField];
       if (!categoryIndex.has(cat)) categoryIndex.set(cat, new Map());
       const catMap = categoryIndex.get(cat);
       if (!catMap.has(bKey)) catMap.set(bKey, []);
