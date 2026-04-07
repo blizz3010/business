@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
-import { Business, BusinessFilters, CategoryInsight } from '@/lib/types';
+import { Business, BusinessFilters, CategoryInsight, SubcategoryMap } from '@/lib/types';
 
 const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
   ssr: false,
@@ -61,11 +61,14 @@ export default function Home() {
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [selectedBusinesses, setSelectedBusinesses] = useState<Business[]>([]);
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
+  const [subcategories, setSubcategories] = useState<SubcategoryMap>({});
+  const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
   const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [flyTo, setFlyTo] = useState<[number, number] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const businessRequestAbortRef = useRef<AbortController | null>(null);
+  const searchRequestAbortRef = useRef<AbortController | null>(null);
 
   const handleFlyTo = useCallback((lat: number, lng: number) => {
     setFlyTo([lat, lng]);
@@ -75,7 +78,7 @@ export default function Home() {
   const isMisconfiguredProdApiBase =
     typeof window !== 'undefined' && !isLocalhostHost(window.location.hostname) && API_BASE.includes('localhost');
 
-  // ── Load static data (categories + priority targets) ───────────────────
+  // ── Load static data (categories + subcategories) ─────────────────────
   useEffect(() => {
     const fetchStaticData = async () => {
       if (isMisconfiguredProdApiBase) {
@@ -86,13 +89,20 @@ export default function Home() {
       }
 
       try {
-        const categoryResponse = await fetch(`${API_BASE}/api/categories`);
+        const [categoryResponse, subcategoryResponse] = await Promise.all([
+          fetch(`${API_BASE}/api/categories`),
+          fetch(`${API_BASE}/api/subcategories`)
+        ]);
 
         if (!categoryResponse.ok) {
           throw new Error('Failed to load category data.');
         }
 
         setCategories(await categoryResponse.json());
+
+        if (subcategoryResponse.ok) {
+          setSubcategories(await subcategoryResponse.json());
+        }
       } catch (fetchError) {
         setError(
           fetchError instanceof Error
@@ -105,8 +115,54 @@ export default function Home() {
     fetchStaticData();
   }, [isMisconfiguredProdApiBase]);
 
+  // ── Search handler ────────────────────────────────────────────────────
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query) {
+      // Clear search
+      setFilters(prev => ({ ...prev, searchQuery: undefined }));
+      setSearchResultCount(null);
+      return;
+    }
+
+    setFilters(prev => ({ ...prev, searchQuery: query }));
+
+    // Abort previous search
+    if (searchRequestAbortRef.current) {
+      searchRequestAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    searchRequestAbortRef.current = controller;
+
+    try {
+      const params = new URLSearchParams({ q: query, limit: '2000' });
+      if (hasValidBounds(bounds)) {
+        params.set('south', String(bounds.south));
+        params.set('north', String(bounds.north));
+        params.set('west', String(bounds.west));
+        params.set('east', String(bounds.east));
+      }
+
+      const response = await fetch(`${API_BASE}/api/search?${params}`, {
+        signal: controller.signal
+      });
+
+      if (!response.ok) throw new Error(await readErrorMessage(response));
+      const data = await response.json();
+
+      setAllBusinesses(data.businesses);
+      setSelectedBusinesses(data.businesses);
+      setSearchResultCount(data.total);
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return;
+      setError(err instanceof Error ? err.message : 'Search failed');
+    }
+  }, [bounds]);
+
   // ── Load businesses for the current viewport ───────────────────────────
   useEffect(() => {
+    // Skip normal fetch if we have an active search
+    if (filters.searchQuery) return;
+
     const fetchBusinesses = async () => {
       if (!hasValidBounds(bounds)) return;
 
@@ -125,7 +181,9 @@ export default function Home() {
           west: String(bounds.west),
           east: String(bounds.east)
         });
-        if (filters.category) {
+        if (filters.subcategory) {
+          baseParams.set('subcategory', filters.subcategory);
+        } else if (filters.category) {
           baseParams.set('category', filters.category);
         }
         const response = await fetch(`${API_BASE}/api/businesses?${baseParams.toString()}`, { signal: controller.signal });
@@ -134,6 +192,7 @@ export default function Home() {
 
         setAllBusinesses(rows);
         setSelectedBusinesses(rows);
+        setSearchResultCount(null);
       } catch (fetchError) {
         if ((fetchError as Error)?.name === 'AbortError') return;
         setAllBusinesses([]);
@@ -156,13 +215,13 @@ export default function Home() {
         businessRequestAbortRef.current.abort();
       }
     };
-  }, [bounds, filters.category]);
+  }, [bounds, filters.category, filters.subcategory, filters.searchQuery]);
 
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
       <section className="space-y-3 lg:col-span-2">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-2xl font-bold">Business Opportunity Intelligence</h1>
+          <h1 className="text-2xl font-bold">StreetScope AI</h1>
           <span className="rounded bg-slate-800 px-3 py-1 text-sm text-slate-300">
             {loading ? 'Loading...' : `${selectedBusinesses.length} businesses`}
           </span>
@@ -172,6 +231,7 @@ export default function Home() {
           businesses={selectedBusinesses}
           allBusinesses={allBusinesses}
           selectedCategory={filters.category}
+          selectedSubcategory={filters.subcategory}
           showBusinessMarkers={filters.showBusinessMarkers}
           opportunityLayerEnabled={filters.opportunityLayerEnabled}
           flyTo={flyTo}
@@ -184,8 +244,11 @@ export default function Home() {
           filters={filters}
           categories={categoryOptions}
           categoryInsights={categories}
+          subcategories={subcategories}
+          searchResultCount={searchResultCount}
           onFilterChange={setFilters}
           onFlyTo={handleFlyTo}
+          onSearch={handleSearch}
         />
       </aside>
     </main>

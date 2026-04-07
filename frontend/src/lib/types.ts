@@ -3,6 +3,7 @@ export type Business = {
   name: string;
   category: string;
   normalized_category: string;
+  subcategory: string;
   lat: number;
   lng: number;
   rating: number | null;
@@ -17,8 +18,25 @@ export type CategoryInsight = {
   avg_reviews: string | null;
 };
 
+export type SubcategoryInfo = {
+  subcategory: string;
+  total: string;
+  avg_rating: string | null;
+  avg_reviews: string | null;
+};
+
+export type SubcategoryMap = Record<string, SubcategoryInfo[]>;
+
+export type SearchResult = {
+  query: string;
+  total: number;
+  businesses: Business[];
+};
+
 export type BusinessFilters = {
   category?: string;
+  subcategory?: string;
+  searchQuery?: string;
   showBusinessMarkers: boolean;
   opportunityLayerEnabled: boolean;
 };

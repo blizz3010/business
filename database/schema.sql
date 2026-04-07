@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   name TEXT NOT NULL,
   category TEXT NOT NULL,
   normalized_category TEXT NOT NULL DEFAULT 'Services',
+  subcategory TEXT NOT NULL DEFAULT 'Services',
   lat DOUBLE PRECISION NOT NULL,
   lng DOUBLE PRECISION NOT NULL,
   rating DOUBLE PRECISION,
@@ -15,6 +16,9 @@ CREATE TABLE IF NOT EXISTS businesses (
 
 CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category);
 CREATE INDEX IF NOT EXISTS idx_businesses_normalized_category ON businesses(normalized_category);
+CREATE INDEX IF NOT EXISTS idx_businesses_subcategory ON businesses(subcategory);
 CREATE INDEX IF NOT EXISTS idx_businesses_lat_lng ON businesses(lat, lng);
 CREATE INDEX IF NOT EXISTS idx_businesses_viewport_normalized ON businesses(normalized_category, lat, lng);
+CREATE INDEX IF NOT EXISTS idx_businesses_viewport_subcategory ON businesses(subcategory, lat, lng);
 CREATE INDEX IF NOT EXISTS idx_businesses_opportunity_filters ON businesses(review_count, rating);
+CREATE INDEX IF NOT EXISTS idx_businesses_name_lower ON businesses(LOWER(name));

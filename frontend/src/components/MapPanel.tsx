@@ -12,6 +12,7 @@ type Props = {
   businesses: Business[];
   allBusinesses: Business[];
   selectedCategory?: string;
+  selectedSubcategory?: string;
   showBusinessMarkers: boolean;
   opportunityLayerEnabled?: boolean;
   flyTo?: [number, number] | null;
@@ -42,10 +43,22 @@ function getCellStepDegrees(cellSizeMeters: number, latitude: number) {
   return { latStep, lngStep };
 }
 
+function formatDistance(km: number): string {
+  const meters = Math.round(km * 1000);
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${meters}m`;
+}
+
+function ratingStars(rating: number | null): string {
+  if (rating === null) return 'N/A';
+  return `${rating.toFixed(1)} stars`;
+}
+
 export function MapPanel({
   businesses,
   allBusinesses,
   selectedCategory,
+  selectedSubcategory,
   showBusinessMarkers,
   opportunityLayerEnabled = false,
   flyTo,
@@ -170,6 +183,7 @@ export function MapPanel({
         <div style="font-size:12px;line-height:1.4;max-width:280px;">
           <strong>${escapeHtml(business.name)}</strong><br/>
           Category: <strong>${escapeHtml(business.normalized_category)}</strong><br/>
+          Type: <strong>${escapeHtml(business.subcategory || business.normalized_category)}</strong><br/>
           Rating: <strong>${business.rating ?? 'N/A'}</strong><br/>
           Reviews: <strong>${business.review_count}</strong>
         </div>
@@ -237,6 +251,9 @@ export function MapPanel({
       limit: '15'
     });
 
+    if (selectedSubcategory) {
+      params.set('subcategory', selectedSubcategory);
+    }
     if (selectedCategory) {
       params.set('category', selectedCategory);
     }
@@ -258,9 +275,11 @@ export function MapPanel({
       const halfLat = latStep * 0.42;
       const halfLng = lngStep * 0.42;
 
+      const L = (window as any).L;
+
       for (const cell of cells) {
         const catColor = getCategoryColor(cell.category);
-        const gapMeters = Math.round((cell.gap_km ?? 0) * 1000);
+        const displayCategory = selectedSubcategory || cell.category;
 
         const rect = rectangle(
           [
@@ -275,55 +294,114 @@ export function MapPanel({
           }
         );
 
-        // Build popup
-        const competitorHtml = cell.top_competitors.length === 0
-          ? '<em>No competitors nearby</em>'
-          : cell.top_competitors
-              .map(
-                (c) =>
-                  `<div style="margin:2px 0;">• ${escapeHtml(c.name)} — ★${c.rating ?? 'N/A'} (${c.review_count} reviews) · ${(c.distance_km * 1000).toFixed(0)}m away</div>`
-              )
-              .join('');
+        // Build plain-language popup
+        const gapDistance = formatDistance(cell.gap_km ?? 0);
+        const hasCompetitors = cell.top_competitors.length > 0;
+        const avgRating = cell.avg_competitor_rating;
 
-        const scoreBarHtml = (label: string, value: number, color: string) =>
-          `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
-            <span style="width:80px;font-size:10px;color:#94a3b8;">${label}</span>
-            <div style="flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;">
-              <div style="width:${value}%;height:100%;background:${color};border-radius:3px;"></div>
-            </div>
-            <span style="width:24px;text-align:right;font-size:10px;color:#94a3b8;">${value}</span>
+        // Main insight line
+        let insightHtml: string;
+        if (!hasCompetitors) {
+          insightHtml = `<div style="font-size:13px;font-weight:600;color:#4ade80;margin-bottom:8px;">
+            No ${escapeHtml(displayCategory)} businesses found nearby!<br/>
+            <span style="font-size:11px;font-weight:400;color:#86efac;">This area has zero competition.</span>
           </div>`;
+        } else {
+          insightHtml = `<div style="font-size:13px;font-weight:600;color:#4ade80;margin-bottom:8px;">
+            Nearest ${escapeHtml(displayCategory)} is ${gapDistance} away<br/>
+            <span style="font-size:11px;font-weight:400;color:#86efac;">Gap detected - potential opportunity!</span>
+          </div>`;
+        }
+
+        // Demand context
+        const demandHtml = cell.total_nearby > 20
+          ? `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+              <strong style="color:#38bdf8;">${cell.total_nearby} businesses</strong> nearby = high foot traffic area
+            </div>`
+          : cell.total_nearby > 10
+            ? `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+                <strong style="color:#38bdf8;">${cell.total_nearby} businesses</strong> nearby = moderate activity
+              </div>`
+            : `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+                <strong style="color:#38bdf8;">${cell.total_nearby} businesses</strong> nearby = developing area
+              </div>`;
+
+        // Quality gap context
+        let qualityHtml = '';
+        if (hasCompetitors && avgRating !== null) {
+          if (avgRating < 3.5) {
+            qualityHtml = `<div style="font-size:11px;color:#fbbf24;margin-bottom:4px;">
+              Competitors average <strong>${avgRating.toFixed(1)} stars</strong> - room for a better option!
+            </div>`;
+          } else if (avgRating < 4.0) {
+            qualityHtml = `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+              Competitors average <strong>${avgRating.toFixed(1)} stars</strong> - moderate quality
+            </div>`;
+          } else {
+            qualityHtml = `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+              Competitors average <strong>${avgRating.toFixed(1)} stars</strong> - strong competition here
+            </div>`;
+          }
+        }
+
+        // Competitor list
+        const competitorHtml = cell.top_competitors.length === 0
+          ? ''
+          : `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;">
+              <strong style="font-size:11px;">Nearest competitors:</strong>
+              ${cell.top_competitors
+                .map(
+                  (c) =>
+                    `<div style="margin:3px 0;font-size:11px;color:#cbd5e1;">
+                      ${escapeHtml(c.name)} - ${ratingStars(c.rating)} (${c.review_count} reviews) · ${formatDistance(c.distance_km)}
+                    </div>`
+                )
+                .join('')}
+            </div>`;
+
+        // Opportunity score badge
+        const scoreBadgeColor = cell.score >= 60 ? '#22c55e' : cell.score >= 40 ? '#eab308' : '#94a3b8';
 
         rect.bindPopup(`
-          <div style="font-size:12px;line-height:1.5;max-width:300px;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span style="width:10px;height:10px;border-radius:2px;background:${catColor.fill};border:1px solid ${catColor.stroke};display:inline-block;"></span>
-              <strong>${escapeHtml(cell.category)} gap</strong>
-              <span style="margin-left:auto;font-weight:bold;font-size:14px;">${cell.score}</span>
+          <div style="font-size:12px;line-height:1.5;max-width:320px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="width:10px;height:10px;border-radius:2px;background:${catColor.fill};border:1px solid ${catColor.stroke};display:inline-block;"></span>
+                <strong style="font-size:13px;">${escapeHtml(displayCategory)} Opportunity</strong>
+              </div>
+              <span style="background:${scoreBadgeColor}22;color:${scoreBadgeColor};font-weight:bold;font-size:13px;padding:2px 8px;border-radius:12px;border:1px solid ${scoreBadgeColor}44;">
+                ${cell.score}/100
+              </span>
             </div>
 
-            <div style="margin-bottom:6px;font-size:11px;color:#94a3b8;">
-              Nearest ${escapeHtml(cell.category)} is <strong style="color:#e2e8f0;">${gapMeters >= 1000 ? (gapMeters / 1000).toFixed(1) + 'km' : gapMeters + 'm'}</strong> away
-            </div>
-
-            ${scoreBarHtml('Gap distance', cell.scarcity_score, '#22c55e')}
-            ${scoreBarHtml('Local demand', cell.demand_score, '#38bdf8')}
-            ${scoreBarHtml('Quality gap', cell.quality_gap_score, '#facc15')}
-
-            <div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;">
-              <strong>Nearest ${escapeHtml(cell.category)} businesses</strong>
-              ${competitorHtml}
-            </div>
+            ${insightHtml}
+            ${demandHtml}
+            ${qualityHtml}
+            ${competitorHtml}
           </div>
         `);
 
         layer.addLayer(rect);
+
+        // Add a marker at the center of each opportunity for visibility
+        if (L) {
+          const marker = L.marker([cell.lat, cell.lng], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div style="width:24px;height:24px;border-radius:50%;background:${scoreBadgeColor};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">${cell.score}</div>`,
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            })
+          });
+          marker.bindPopup(rect.getPopup());
+          layer.addLayer(marker);
+        }
       }
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') return;
       console.warn('Opportunity grid fetch failed:', err);
     }
-  }, [opportunityLayerEnabled, selectedCategory]);
+  }, [opportunityLayerEnabled, selectedCategory, selectedSubcategory]);
 
   // Wire up opportunity layer toggling and re-fetching on map movement
   useEffect(() => {
@@ -358,7 +436,7 @@ export function MapPanel({
       if (opportunityAbortRef.current) opportunityAbortRef.current.abort();
       layer.clearLayers();
     };
-  }, [mapReady, opportunityLayerEnabled, selectedCategory, fetchAndRenderOpportunities]);
+  }, [mapReady, opportunityLayerEnabled, selectedCategory, selectedSubcategory, fetchAndRenderOpportunities]);
 
   // ── Fly to location ──────────────────────────────────────────────────
   useEffect(() => {
@@ -391,12 +469,14 @@ export function MapPanel({
       div.style.cssText =
         'background:rgba(15,23,42,0.92);padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.6;color:#cbd5e1;pointer-events:auto;';
 
+      const displayLabel = selectedSubcategory || selectedCategory || 'All categories';
+
       const entries = selectedCategory
         ? [[selectedCategory, CATEGORY_COLORS[selectedCategory] ?? CATEGORY_COLORS['Services']]]
         : Object.entries(CATEGORY_COLORS);
 
       div.innerHTML =
-        '<div style="font-weight:600;margin-bottom:4px;color:#e2e8f0;">Opportunity categories</div>' +
+        `<div style="font-weight:600;margin-bottom:4px;color:#e2e8f0;">Searching: ${escapeHtml(displayLabel)}</div>` +
         (entries as [string, { fill: string; stroke: string }][])
           .map(
             ([name, c]) =>
@@ -419,7 +499,7 @@ export function MapPanel({
         legendControlRef.current = null;
       }
     };
-  }, [mapReady, opportunityLayerEnabled, selectedCategory]);
+  }, [mapReady, opportunityLayerEnabled, selectedCategory, selectedSubcategory]);
 
   return (
     <div

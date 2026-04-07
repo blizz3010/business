@@ -9,7 +9,7 @@ const MAX_LIMIT = 5000;
 
 businessesRouter.get('/businesses', async (req, res) => {
   try {
-    const { minRating, minReviews, category, south, north, west, east, limit, offset } = req.query;
+    const { minRating, minReviews, category, subcategory, south, north, west, east, limit, offset } = req.query;
 
     const whereClauses = [];
     const params = [];
@@ -55,7 +55,10 @@ businessesRouter.get('/businesses', async (req, res) => {
       }
     }
 
-    if (category) {
+    if (subcategory) {
+      params.push(String(subcategory).toLowerCase());
+      whereClauses.push(`LOWER(subcategory) = $${params.length}`);
+    } else if (category) {
       params.push(String(category).toLowerCase());
       whereClauses.push(`LOWER(normalized_category) = $${params.length}`);
     }
@@ -79,6 +82,7 @@ businessesRouter.get('/businesses', async (req, res) => {
         review_count,
         category,
         normalized_category,
+        subcategory,
         opportunity_score
       FROM (
         SELECT
@@ -89,6 +93,7 @@ businessesRouter.get('/businesses', async (req, res) => {
           review_count,
           category,
           normalized_category,
+          subcategory,
           (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score
         FROM businesses
       ) enriched
@@ -106,13 +111,127 @@ businessesRouter.get('/businesses', async (req, res) => {
   }
 });
 
+// Search businesses by name (text search)
+businessesRouter.get('/search', async (req, res) => {
+  try {
+    const { q, south, north, west, east, limit } = req.query;
+
+    if (!q || String(q).trim().length === 0) {
+      return sendValidationError(res, 'Search query "q" is required.');
+    }
+
+    const searchTerm = String(q).trim();
+    const parsedLimit = Math.min(Math.max(parseNumber(limit) ?? 500, 1), 2000);
+
+    const whereClauses = [];
+    const params = [];
+
+    // Name search using ILIKE for pattern matching
+    params.push(`%${searchTerm}%`);
+    whereClauses.push(`name ILIKE $${params.length}`);
+
+    // Optional bounds filtering
+    const parsedSouth = parseNumber(south);
+    const parsedNorth = parseNumber(north);
+    const parsedWest = parseNumber(west);
+    const parsedEast = parseNumber(east);
+
+    const hasValidBounds =
+      parsedSouth !== null &&
+      parsedNorth !== null &&
+      parsedWest !== null &&
+      parsedEast !== null &&
+      parsedSouth < parsedNorth &&
+      parsedWest < parsedEast;
+
+    if (hasValidBounds) {
+      params.push(parsedSouth);
+      whereClauses.push(`lat >= $${params.length}`);
+      params.push(parsedNorth);
+      whereClauses.push(`lat <= $${params.length}`);
+      params.push(parsedWest);
+      whereClauses.push(`lng >= $${params.length}`);
+      params.push(parsedEast);
+      whereClauses.push(`lng <= $${params.length}`);
+    }
+
+    const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+
+    params.push(parsedLimit);
+    const limitPlaceholder = `$${params.length}`;
+
+    const query = `
+      SELECT
+        name,
+        lat,
+        lng,
+        rating,
+        review_count,
+        category,
+        normalized_category,
+        subcategory,
+        (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score
+      FROM businesses
+      ${whereSQL}
+      ORDER BY review_count DESC
+      LIMIT ${limitPlaceholder}
+    `;
+
+    const result = await pgPool.query(query, params);
+
+    return res.json({
+      query: searchTerm,
+      total: result.rows.length,
+      businesses: result.rows
+    });
+  } catch (error) {
+    return sendServerError(res, 'Failed to search businesses', error);
+  }
+});
+
+// Get subcategories grouped by parent category
+businessesRouter.get('/subcategories', async (_req, res) => {
+  try {
+    const result = await pgPool.query(`
+      SELECT
+        normalized_category AS category,
+        subcategory,
+        COUNT(*) as total,
+        AVG(rating) as avg_rating,
+        AVG(review_count) as avg_reviews
+      FROM businesses
+      GROUP BY normalized_category, subcategory
+      ORDER BY normalized_category, total DESC
+    `);
+
+    // Group by parent category
+    const grouped = {};
+    for (const row of result.rows) {
+      if (!grouped[row.category]) {
+        grouped[row.category] = [];
+      }
+      grouped[row.category].push({
+        subcategory: row.subcategory,
+        total: row.total,
+        avg_rating: row.avg_rating,
+        avg_reviews: row.avg_reviews
+      });
+    }
+
+    return res.json(grouped);
+  } catch (error) {
+    return sendServerError(res, 'Failed to fetch subcategories', error);
+  }
+});
+
 async function fetchPriorityTargets(_req, res) {
   try {
     const result = await pgPool.query(`
       SELECT
         *,
         (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score,
-        normalized_category
+        normalized_category,
+        subcategory
       FROM businesses
       WHERE rating < 3.8
         AND review_count > 100
