@@ -76,6 +76,7 @@ businessesRouter.get('/businesses', async (req, res) => {
     const query = `
       SELECT
         name,
+        place_id,
         lat,
         lng,
         rating,
@@ -83,10 +84,12 @@ businessesRouter.get('/businesses', async (req, res) => {
         category,
         normalized_category,
         subcategory,
+        address,
         opportunity_score
       FROM (
         SELECT
           name,
+          place_id,
           lat,
           lng,
           rating,
@@ -94,6 +97,7 @@ businessesRouter.get('/businesses', async (req, res) => {
           category,
           normalized_category,
           subcategory,
+          address,
           (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score
         FROM businesses
       ) enriched
@@ -111,7 +115,7 @@ businessesRouter.get('/businesses', async (req, res) => {
   }
 });
 
-// Search businesses by name (text search)
+// Search businesses across name, category, subcategory, and address
 businessesRouter.get('/search', async (req, res) => {
   try {
     const { q, south, north, west, east, limit } = req.query;
@@ -123,14 +127,20 @@ businessesRouter.get('/search', async (req, res) => {
     const searchTerm = String(q).trim();
     const parsedLimit = Math.min(Math.max(parseNumber(limit) ?? 500, 1), 2000);
 
-    const whereClauses = [];
-    const params = [];
+    // $1 is the search pattern — used multiple times in the query
+    const params = [`%${searchTerm}%`];
 
-    // Name search using ILIKE for pattern matching
-    params.push(`%${searchTerm}%`);
-    whereClauses.push(`name ILIKE $${params.length}`);
+    // Multi-field search: match across name, subcategory, normalized_category, category, and address
+    const searchCondition = `(
+      name ILIKE $1
+      OR subcategory ILIKE $1
+      OR normalized_category ILIKE $1
+      OR category ILIKE $1
+      OR address ILIKE $1
+    )`;
 
-    // Optional bounds filtering
+    const boundsClauses = [];
+
     const parsedSouth = parseNumber(south);
     const parsedNorth = parseNumber(north);
     const parsedWest = parseNumber(west);
@@ -146,23 +156,25 @@ businessesRouter.get('/search', async (req, res) => {
 
     if (hasValidBounds) {
       params.push(parsedSouth);
-      whereClauses.push(`lat >= $${params.length}`);
+      boundsClauses.push(`lat >= $${params.length}`);
       params.push(parsedNorth);
-      whereClauses.push(`lat <= $${params.length}`);
+      boundsClauses.push(`lat <= $${params.length}`);
       params.push(parsedWest);
-      whereClauses.push(`lng >= $${params.length}`);
+      boundsClauses.push(`lng >= $${params.length}`);
       params.push(parsedEast);
-      whereClauses.push(`lng <= $${params.length}`);
+      boundsClauses.push(`lng <= $${params.length}`);
     }
 
-    const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+    const boundsSQL = boundsClauses.length > 0 ? `AND ${boundsClauses.join(' AND ')}` : '';
 
     params.push(parsedLimit);
     const limitPlaceholder = `$${params.length}`;
 
+    // Relevance scoring: name matches rank highest, then subcategory/category, then address
     const query = `
       SELECT
         name,
+        place_id,
         lat,
         lng,
         rating,
@@ -170,10 +182,19 @@ businessesRouter.get('/search', async (req, res) => {
         category,
         normalized_category,
         subcategory,
-        (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score
+        address,
+        (review_count * (5 - COALESCE(rating, 0))) AS opportunity_score,
+        CASE
+          WHEN name ILIKE $1 THEN 3
+          WHEN subcategory ILIKE $1 THEN 2
+          WHEN normalized_category ILIKE $1 THEN 2
+          WHEN category ILIKE $1 THEN 1
+          WHEN address ILIKE $1 THEN 1
+          ELSE 0
+        END AS relevance
       FROM businesses
-      ${whereSQL}
-      ORDER BY review_count DESC
+      WHERE ${searchCondition} ${boundsSQL}
+      ORDER BY relevance DESC, review_count DESC
       LIMIT ${limitPlaceholder}
     `;
 

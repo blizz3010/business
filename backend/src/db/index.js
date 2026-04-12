@@ -96,4 +96,42 @@ export async function ensureBusinessSchemaReady() {
   await pgPool.query('CREATE INDEX IF NOT EXISTS idx_businesses_viewport_subcategory ON businesses(subcategory, lat, lng)');
   await pgPool.query('CREATE INDEX IF NOT EXISTS idx_businesses_opportunity_filters ON businesses(review_count, rating)');
   await pgPool.query('CREATE INDEX IF NOT EXISTS idx_businesses_name_lower ON businesses(LOWER(name))');
+
+  // ── Auth & user tables ──────────────────────────────────────────────────
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pgPool.query('CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)');
+  await pgPool.query('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)');
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS saved_businesses (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      place_id TEXT NOT NULL,
+      business_name TEXT NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, place_id)
+    )
+  `);
+
+  await pgPool.query('CREATE INDEX IF NOT EXISTS idx_saved_businesses_user ON saved_businesses(user_id)');
 }
