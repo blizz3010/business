@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import { analyzeRouter } from './routes/analyzeRoute.js';
 import { businessesRouter } from './routes/businessesRoute.js';
 import { opportunityGridRouter } from './routes/opportunityGridRoute.js';
+import { authRouter } from './routes/authRoute.js';
+import { favoritesRouter } from './routes/favoritesRoute.js';
 import { ensureBusinessSchemaReady } from './db/index.js';
 
 dotenv.config();
@@ -43,6 +45,8 @@ app.get('/health', (_req, res) => {
 app.use('/api', analyzeRouter);
 app.use('/api', businessesRouter);
 app.use('/api', opportunityGridRouter);
+app.use('/api', authRouter);
+app.use('/api', favoritesRouter);
 
 app.use((error, _req, res, _next) => {
   if (error?.message?.startsWith('CORS blocked')) {

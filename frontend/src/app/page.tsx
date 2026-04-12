@@ -2,16 +2,17 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Header } from '@/components/Header';
 import { Dashboard } from '@/components/Dashboard';
 import { Business, BusinessFilters, CategoryInsight, SubcategoryMap } from '@/lib/types';
+import { API_BASE } from '@/lib/config';
 
 const MapPanel = dynamic(() => import('@/components/MapPanel').then((mod) => mod.MapPanel), {
   ssr: false,
-  loading: () => <div className="animate-pulse rounded-xl bg-slate-900" style={{ height: 'calc(100vh - 120px)', minHeight: '400px' }} />
+  loading: () => (
+    <div className="animate-pulse rounded-xl bg-slate-900/50 border border-slate-800/50" style={{ height: 'calc(100vh - 140px)', minHeight: '400px' }} />
+  )
 });
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 const DEFAULT_FILTERS: BusinessFilters = {
   category: 'Automotive',
@@ -33,9 +34,8 @@ async function readErrorMessage(response: Response) {
     if (payload?.error) return String(payload.error);
     if (payload?.message) return String(payload.message);
   } catch {
-    // no-op: fallback to status text below
+    // fallback below
   }
-
   return `Request failed (${response.status} ${response.statusText})`;
 }
 
@@ -63,10 +63,12 @@ export default function Home() {
   const [categories, setCategories] = useState<CategoryInsight[]>([]);
   const [subcategories, setSubcategories] = useState<SubcategoryMap>({});
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
+  const [searchInput, setSearchInput] = useState('');
   const [bounds, setBounds] = useState<ViewportBounds | null>(null);
   const [flyTo, setFlyTo] = useState<[number, number] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedRefreshTrigger, setSavedRefreshTrigger] = useState(0);
   const businessRequestAbortRef = useRef<AbortController | null>(null);
   const searchRequestAbortRef = useRef<AbortController | null>(null);
 
@@ -118,7 +120,6 @@ export default function Home() {
   // ── Search handler ────────────────────────────────────────────────────
   const handleSearch = useCallback(async (query: string) => {
     if (!query) {
-      // Clear search
       setFilters(prev => ({ ...prev, searchQuery: undefined }));
       setSearchResultCount(null);
       return;
@@ -126,7 +127,6 @@ export default function Home() {
 
     setFilters(prev => ({ ...prev, searchQuery: query }));
 
-    // Abort previous search
     if (searchRequestAbortRef.current) {
       searchRequestAbortRef.current.abort();
     }
@@ -158,9 +158,14 @@ export default function Home() {
     }
   }, [bounds]);
 
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('');
+    setFilters(prev => ({ ...prev, searchQuery: undefined }));
+    setSearchResultCount(null);
+  }, []);
+
   // ── Load businesses for the current viewport ───────────────────────────
   useEffect(() => {
-    // Skip normal fetch if we have an active search
     if (filters.searchQuery) return;
 
     const fetchBusinesses = async () => {
@@ -217,40 +222,60 @@ export default function Home() {
     };
   }, [bounds, filters.category, filters.subcategory, filters.searchQuery]);
 
-  return (
-    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-3 lg:items-start">
-      <section className="space-y-3 lg:col-span-2">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-2xl font-bold">StreetScope AI</h1>
-          <span className="rounded bg-slate-800 px-3 py-1 text-sm text-slate-300">
-            {loading ? 'Loading...' : `${selectedBusinesses.length} businesses`}
-          </span>
-        </div>
-        {error ? <p className="rounded border border-rose-800 bg-rose-950/40 p-2 text-sm text-rose-100">{error}</p> : null}
-        <MapPanel
-          businesses={selectedBusinesses}
-          allBusinesses={allBusinesses}
-          selectedCategory={filters.category}
-          selectedSubcategory={filters.subcategory}
-          showBusinessMarkers={filters.showBusinessMarkers}
-          opportunityLayerEnabled={filters.opportunityLayerEnabled}
-          flyTo={flyTo}
-          onBoundsChange={setBounds}
-        />
-      </section>
+  const handleBusinessSaved = useCallback(() => {
+    setSavedRefreshTrigger(prev => prev + 1);
+  }, []);
 
-      <aside>
-        <Dashboard
-          filters={filters}
-          categories={categoryOptions}
-          categoryInsights={categories}
-          subcategories={subcategories}
-          searchResultCount={searchResultCount}
-          onFilterChange={setFilters}
-          onFlyTo={handleFlyTo}
-          onSearch={handleSearch}
-        />
-      </aside>
-    </main>
+  return (
+    <div className="flex h-screen flex-col overflow-hidden">
+      <Header
+        searchInput={searchInput}
+        searchResultCount={searchResultCount}
+        searchQuery={filters.searchQuery}
+        onSearchInputChange={setSearchInput}
+        onSearch={handleSearch}
+        onClearSearch={handleClearSearch}
+        loading={loading}
+        businessCount={selectedBusinesses.length}
+      />
+
+      <main className="flex-1 grid grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-3 lg:items-stretch">
+        <section className="flex flex-col gap-3 lg:col-span-2 min-h-0">
+          {error && (
+            <div className="animate-fade-in rounded-xl border border-rose-800/50 bg-rose-950/30 p-3 text-sm text-rose-200">
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 shrink-0 text-rose-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+                {error}
+              </div>
+            </div>
+          )}
+          <MapPanel
+            businesses={selectedBusinesses}
+            allBusinesses={allBusinesses}
+            selectedCategory={filters.category}
+            selectedSubcategory={filters.subcategory}
+            showBusinessMarkers={filters.showBusinessMarkers}
+            opportunityLayerEnabled={filters.opportunityLayerEnabled}
+            flyTo={flyTo}
+            onBoundsChange={setBounds}
+            onBusinessSaved={handleBusinessSaved}
+          />
+        </section>
+
+        <aside className="overflow-y-auto min-h-0 pb-4">
+          <Dashboard
+            filters={filters}
+            categories={categoryOptions}
+            categoryInsights={categories}
+            subcategories={subcategories}
+            onFilterChange={setFilters}
+            onFlyTo={handleFlyTo}
+            savedRefreshTrigger={savedRefreshTrigger}
+          />
+        </aside>
+      </main>
+    </div>
   );
 }

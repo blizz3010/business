@@ -1,5 +1,6 @@
 export type Business = {
   id?: number;
+  place_id?: string;
   name: string;
   category: string;
   normalized_category: string;
@@ -9,6 +10,7 @@ export type Business = {
   rating: number | null;
   review_count: number;
   opportunity_score: number;
+  address?: string;
 };
 
 export type CategoryInsight = {
